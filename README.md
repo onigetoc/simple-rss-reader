@@ -1,116 +1,124 @@
 # RSS Viewer 📰
 
-Un lecteur de flux RSS et Atom moderne, rapide et épuré, conçu pour une lecture confortable avec prise en charge directe des paramètres d'URL, extraction de médias (images et vidéos YouTube), mode lecteur immersif et agrégation multi-flux en mémoire.
+A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images and YouTube videos), an immersive reader mode and in-memory multi-feed aggregation.
+
+![RSS Viewer preview](https://raw.githubusercontent.com/onigetoc/simple-rss-reader/refs/heads/main/public/screenshot.png)
 
 ---
 
-## ✨ Fonctionnalités principales
+## ✨ Main features
 
-### 🔗 Passerelle d'URL directe & Extensions Chrome
-- **Paramètre `?rss=`** : Chargez directement n'importe quel flux en ouvrant `/?rss=https://exemple.com/feed.xml`.
-- **Intégration Extension / Bookmarklet** : Compatible avec les extensions de navigateur (Chrome, Firefox) et les bookmarklets en un clic pour envoyer le flux de la page courante directement dans le lecteur.
+### 🔗 Direct URL gateway & Chrome extensions
+- **`?rss=` parameter**: Load any feed directly by opening `/?rss=https://example.com/feed.xml`.
+- **Extension / Bookmarklet integration**: Works with browser extensions (Chrome, Firefox) and one-click bookmarklets to send the current page's feed straight into the reader.
 
-### 📚 Vue agrégée « ALL Feeds »
-- **Flux combinés en mémoire** : Rassemble et déduplique tous les flux RSS consultés pendant votre session.
-- **Tri chronologique** : Les articles sont triés du plus récent au plus ancien, toutes sources confondues.
-- **Pagination par 20 articles** : Affichage initial de 20 articles avec boutons *« Charger 20 de plus »*, *« Tout afficher »* et *« Réinitialiser à 20 »*.
-- **Échantillons préchargés** : Bouton pour injecter en un clic une sélection de flux d'actualités technologiques (The Verge, Ars Technica, Hacker News, GitHub Blog).
+### 📚 Aggregated "ALL Feeds" view
+- **In-memory combined feeds**: Collects and deduplicates every RSS feed you visit during your session.
+- **Chronological sort**: Articles are sorted newest first, across all sources.
+- **20-article pagination**: Shows 20 articles initially with *"Load 20 more"*, *"Show all"* and *"Reset to 20"* buttons.
+- **Preloaded samples**: One-click button to inject a selection of tech news feeds (The Verge, Ars Technica, Hacker News, GitHub Blog).
 
-### 📖 Lecteur d'article complet (Reader View)
-- **Lecture immersive sans distraction** : Affiche le texte complet, les images et les vidéos intégrées.
-- **Raccourcis clavier** :
-  - `←` / `→` : Passer à l'article précédent ou suivant.
-  - `Échap` : Retourner à la liste des articles.
-  - Taille de police ajustable (`A` / `A+`).
-- **Liens sécurisés en nouvel onglet** : Tous les liens présents dans le contenu s'ouvrent systématiquement dans un nouvel onglet (`target="_blank"` avec `rel="noopener noreferrer"`).
-- **Vidéos & Miniatures YouTube** : Affichage de la miniature haute qualité avec lecteur vidéo optimisé.
+### 📖 Full article reader (Reader View)
+- **Immersive, distraction-free reading**: Displays the full text, images and embedded videos.
+- **Keyboard shortcuts**:
+  - `←` / `→`: Go to the previous or next article.
+  - `Esc`: Return to the article list.
+  - Adjustable font size (`A` / `A+`).
+- **Safe links in new tabs**: Every link in the content always opens in a new tab (`target="_blank"` with `rel="noopener noreferrer"`).
+- **YouTube videos & thumbnails**: High-quality thumbnail with an optimized video player.
 
-### 🎨 Thème Sombre / Clair & Personnalisation
-- **Sélecteur de thème** : Bascule instantanée entre le mode sombre (Dark) et le mode clair (Light) via l'icône Soleil/Lune.
-- **Persistance** : Sauvegarde automatique de votre préférence de thème dans `localStorage`.
-- **Barres de défilement stylisées** : Barres de défilement adaptées aux couleurs de chaque thème.
-- **Deux modes d'affichage** : Grille de cartes (`Cards`) ou liste compacte (`Compact`).
+### 🎨 Dark / Light theme & customization
+- **Theme switcher**: Instant toggle between dark and light mode via the Sun/Moon icon.
+- **Persistence**: Your theme preference is saved automatically in `localStorage`.
+- **Styled scrollbars**: Scrollbars that match the colors of each theme.
+- **Two display modes**: Card grid (`Cards`) or compact list (`Compact`).
 
-### 💾 Favoris & Historique local
-- **Marque-pages** : Enregistrez vos articles préférés localement pour les retrouver à tout moment.
-- **Historique récent** : Accès rapide aux derniers flux consultés avec possibilité de les supprimer.
-- **Recherche en direct** : Filtrage instantané par mot-clé, titre ou auteur dans le flux actif ou dans « ALL Feeds ».
+### 💾 Bookmarks & local history
+- **Bookmarks**: Save your favorite articles locally to find them again at any time.
+- **Recent history**: Quick access to the last feeds you visited, with the ability to remove them.
+- **Live search**: Instant filtering by keyword, title or author in the active feed or in "ALL Feeds".
 
 ---
 
-## 🛠️ Stack technique
+## 🛠️ Tech stack
 
-- **Frontend** :
+- **Frontend**:
   - [React 19](https://react.dev/) & [TypeScript](https://www.typescriptlang.org/)
   - [Vite](https://vite.dev/)
   - [Tailwind CSS v4](https://tailwindcss.com/)
-  - [Lucide React](https://lucide.dev/) (Icônes)
-- **Backend & Proxy RSS** :
+  - [Lucide React](https://lucide.dev/) (icons)
+- **Backend & RSS proxy**:
   - [Express](https://expressjs.com/) (Node.js)
-  - [rss-parser](https://github.com/rbren/rss-parser) v3.13 (Analyse XML RSS / Atom / RDF avec extraction des balises médias)
-  - Mécanisme de secours CORS côté client (`allorigins`) en cas de restriction réseau.
+  - [rss-parser](https://github.com/rbren/rss-parser) v3.13 (RSS / Atom / RDF XML parsing with media tag extraction)
+  - Client-side CORS fallback mechanism (`allorigins`) when the network restricts requests.
 
 ---
 
-## 🚀 Démarrage rapide
+## 🚀 Quick start
 
-### Prérequis
-- [Node.js](https://nodejs.org/) (version 18 ou supérieure recommandée)
-- `npm` ou `bun`
+### Requirements
+- [Node.js](https://nodejs.org/) (version 18 or higher recommended)
+- `npm` or `bun`
 
 ### Installation
 
-1. **Cloner le dépôt ou ouvrir le répertoire** :
+1. **Clone the repository or open the directory**:
    ```bash
-   git clone <URL_DU_DEPOT>
-   cd <NOM_DU_DOSSIER>
+   git clone <REPOSITORY_URL>
+   cd <FOLDER_NAME>
    ```
 
-2. **Installer les dépendances** :
+2. **Install dependencies**:
    ```bash
    npm install
    ```
 
-3. **Lancer le serveur de développement** :
+3. **Start the development server**:
    ```bash
    npm run dev
    ```
-   L'application sera accessible sur `http://localhost:3000`.
+   The app will be available at `http://localhost:3000`.
 
 ---
 
-## 📦 Scripts disponibles
+## 📦 Available scripts
 
-| Commande | Description |
+| Command | Description |
 | :--- | :--- |
-| `npm run dev` | Démarre le serveur backend Express avec le middleware Vite en mode développement (sur le port 3000) |
-| `npm run build` | Compile le frontend avec Vite et bundle le backend TypeScript avec esbuild dans `dist/server.cjs` |
-| `npm start` | Lance le serveur de production compilé |
-| `npm run lint` | Valide les types TypeScript (`tsc --noEmit`) |
-| `npm run clean` | Supprime le dossier de compilation `dist` |
+| `npm run dev` | Starts the Express backend server with the Vite middleware in development mode (on port 3000) |
+| `npm run build` | Builds the frontend with Vite and bundles the TypeScript backend with esbuild into `dist/server.cjs` |
+| `npm start` | Runs the compiled production server |
+| `npm run lint` | Validates the TypeScript types (`tsc --noEmit`) |
+| `npm run clean` | Removes the `dist` build folder |
 
 ---
 
-## 🔌 Utilisation avec une extension Chrome ou un Bookmarklet
+## 🔌 Using with a Chrome extension or a Bookmarklet
 
-### Via l'URL
-Ajoutez simplement le flux RSS souhaité en paramètre d'URL :
+### Via the URL
+Simply add the desired RSS feed as a URL parameter:
 ```text
-http://localhost:3000/?rss=https://news.ycombinator.com/rss
+http://localhost:3000/?rss=https://nytimes.com
 ```
+The reader fetches and displays the feed automatically. This works with any feed URL (RSS, Atom or RDF), for example `https://news.ycombinator.com/rss`.
 
-### Via un Bookmarklet (Favori navigateur)
-Créez un nouveau favori dans votre navigateur et collez le code suivant dans l'adresse (URL) :
-```javascript
-javascript:(function(){
-  var link = document.querySelector('link[type="application/rss+xml"], link[type="application/atom+xml"]');
-  var rssUrl = link ? link.href : window.location.href;
-  window.open('https://VOTRE_DOMAINE/?rss=' + encodeURIComponent(rssUrl), '_blank');
-})();
-```
+### Via the Chrome "RSS Subscription Extension"
+The reader integrates seamlessly with the [RSS Subscription Extension](https://chromewebstore.google.com/detail/rss-subscription-extensio/nlbjncdgjeocebhnmkbbbdekmmmcbfjd) (or any similar RSS reader / subscription tool) thanks to its `?rss=` parameter.
+
+1. Install the extension in Chrome.
+2. Open the extension options and click **Manage**.
+3. Add a new reader with the following URL, where `%s` is automatically replaced by the current page's feed:
+
+   ```text
+   http://localhost:3000/?rss=%s
+   ```
+
+   ![Manage subscription configuration](https://github.com/onigetoc/simple-rss-reader/blob/main/public/rss-sub.png?raw=true)
+
+Once configured, just click the extension icon while visiting a site to open its feed directly in Simple RSS Viewer.
 
 ---
 
-## 📄 Licence
+## 📄 License
 
-Ce projet est sous licence libre. Consultez le code source pour plus de détails.
+This project is released under a free license. See the source code for more details.

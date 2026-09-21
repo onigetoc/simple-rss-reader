@@ -292,7 +292,7 @@ export function getStoredTheme(): 'dark' | 'light' {
   try {
     const stored = localStorage.getItem(STORAGE_THEME_KEY);
     if (stored === 'light' || stored === 'dark') return stored;
-    return 'dark'; // Dark par défaut as requested
+    return 'dark'; // Dark by default
   } catch {
     return 'dark';
   }

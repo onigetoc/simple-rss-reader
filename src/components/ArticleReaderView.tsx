@@ -230,8 +230,8 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
                   ? 'bg-white dark:bg-zinc-900 text-amber-500 shadow-xs'
                   : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
-              title="Taille de texte normale (conservé en mémoire)"
-              aria-label="Taille normale"
+              title="Normal text size (kept in memory)"
+              aria-label="Normal text size"
             >
               A
             </button>
@@ -243,8 +243,8 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
                   ? 'bg-white dark:bg-zinc-900 text-amber-500 shadow-xs'
                   : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
-              title="Grossir le texte (conservé par défaut d'une session à l'autre)"
-              aria-label="Grossir le texte"
+              title="Enlarge text (kept by default across sessions)"
+              aria-label="Enlarge text"
             >
               A+
             </button>

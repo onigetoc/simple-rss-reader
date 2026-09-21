@@ -455,7 +455,7 @@ export default function App() {
         {/* If an article is selected, show ArticleReaderView */}
         {selectedArticle ? (
           <ErrorBoundary
-            fallbackTitle="Impossible d'afficher cet article"
+            fallbackTitle="Unable to display this article"
             onReset={handleBackToList}
           >
             <ArticleReaderView

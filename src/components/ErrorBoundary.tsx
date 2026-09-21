@@ -34,10 +34,10 @@ export class ErrorBoundary extends Component<Props, State> {
             <AlertTriangle className="w-6 h-6" />
           </div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-            {this.props.fallbackTitle || "Une erreur est survenue lors de l'affichage de cet article"}
+            {this.props.fallbackTitle || "Something went wrong while displaying this article"}
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md">
-            {this.state.error?.message || "Le contenu de cet article n'a pas pu être chargé correctement."}
+            {this.state.error?.message || "This article's content could not be loaded correctly."}
           </p>
           {this.props.onReset && (
             <button
@@ -49,7 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
               className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-zinc-950 text-xs font-bold transition-colors inline-flex items-center gap-2 shadow-xs cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Retour au flux d'articles</span>
+              <span>Back to the article feed</span>
             </button>
           )}
         </div>
