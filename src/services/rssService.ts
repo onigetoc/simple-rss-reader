@@ -3,7 +3,10 @@ import { FeedItem, FeedMetadata, FeedResponse } from '../types';
 const STORAGE_FAVORITES_KEY = 'rss_viewer_favorites_v1';
 const STORAGE_HISTORY_KEY = 'rss_viewer_history_v1';
 const STORAGE_THEME_KEY = 'rss_viewer_theme_v1';
+const STORAGE_FONT_SIZE_KEY = 'rss_viewer_font_size_v1';
 const STORAGE_FEEDS_CACHE_KEY = 'rss_viewer_feeds_cache_v2';
+
+export type ArticleFontSize = 'normal' | 'large';
 
 export async function fetchFeed(url: string): Promise<FeedResponse> {
   const trimmed = url.trim();
@@ -229,6 +232,25 @@ export function getStoredTheme(): 'dark' | 'light' {
 export function setStoredTheme(theme: 'dark' | 'light'): void {
   try {
     localStorage.setItem(STORAGE_THEME_KEY, theme);
+  } catch {
+    // ignore
+  }
+}
+
+// Reader font size storage (persisted across sessions)
+export function getStoredFontSize(): ArticleFontSize {
+  try {
+    const stored = localStorage.getItem(STORAGE_FONT_SIZE_KEY);
+    if (stored === 'normal' || stored === 'large') return stored;
+    return 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+export function setStoredFontSize(size: ArticleFontSize): void {
+  try {
+    localStorage.setItem(STORAGE_FONT_SIZE_KEY, size);
   } catch {
     // ignore
   }

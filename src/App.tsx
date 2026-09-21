@@ -29,6 +29,9 @@ import {
   removeFromHistory,
   getStoredTheme,
   setStoredTheme,
+  getStoredFontSize,
+  setStoredFontSize,
+  ArticleFontSize,
   FeedHistoryItem,
   CachedFeedEntry,
   getCachedFeeds,
@@ -77,6 +80,14 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [mediaFilter, setMediaFilter] = useState<'all' | 'with-media'>('all');
+
+  // Reader font size: persisted in memory and localStorage across sessions
+  const [fontSize, setFontSize] = useState<ArticleFontSize>(() => getStoredFontSize());
+
+  const handleFontSizeChange = useCallback((newSize: ArticleFontSize) => {
+    setFontSize(newSize);
+    setStoredFontSize(newSize);
+  }, []);
 
   // Pagination state: show 20 at a time by default
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
@@ -456,6 +467,8 @@ export default function App() {
             onToggleFavorite={handleToggleFavorite}
             currentIndex={currentArticleIndex}
             totalCount={displayedItems.length}
+            fontSize={fontSize}
+            onFontSizeChange={handleFontSizeChange}
           />
         ) : (
           /* OTHERWISE: FEED LIST VIEW */

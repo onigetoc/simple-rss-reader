@@ -17,6 +17,11 @@ import {
 } from 'lucide-react';
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
+import {
+  ArticleFontSize,
+  getStoredFontSize,
+  setStoredFontSize,
+} from '../services/rssService';
 
 /**
  * Transforms article HTML so that every link opens in a new tab (_blank),
@@ -64,6 +69,8 @@ interface ArticleReaderViewProps {
   onToggleFavorite: (item: FeedItem) => void;
   currentIndex: number;
   totalCount: number;
+  fontSize?: ArticleFontSize;
+  onFontSizeChange?: (size: ArticleFontSize) => void;
 }
 
 export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
@@ -79,9 +86,21 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
   onToggleFavorite,
   currentIndex,
   totalCount,
+  fontSize: propFontSize,
+  onFontSizeChange,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [fontSize, setFontSize] = useState<'normal' | 'large'>('normal');
+  // Default to stored font size preference so it is remembered across sessions
+  const [internalFontSize, setInternalFontSize] = useState<ArticleFontSize>(() => getStoredFontSize());
+  const currentFontSize = propFontSize ?? internalFontSize;
+
+  const handleSetFontSize = (newSize: ArticleFontSize) => {
+    setInternalFontSize(newSize);
+    setStoredFontSize(newSize);
+    if (onFontSizeChange) {
+      onFontSizeChange(newSize);
+    }
+  };
 
   // Prepare article HTML with all links opening in target="_blank"
   const processedHtml = useMemo(() => {
@@ -187,25 +206,27 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-lg p-0.5 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-600 dark:text-zinc-300">
             <button
               type="button"
-              onClick={() => setFontSize('normal')}
-              className={`px-2 py-1 rounded-md font-semibold transition-colors ${
-                fontSize === 'normal'
+              onClick={() => handleSetFontSize('normal')}
+              className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${
+                currentFontSize === 'normal'
                   ? 'bg-white dark:bg-zinc-900 text-amber-500 shadow-xs'
                   : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
-              title="Standard font size"
+              title="Taille de texte normale (conservé en mémoire)"
+              aria-label="Taille normale"
             >
               A
             </button>
             <button
               type="button"
-              onClick={() => setFontSize('large')}
-              className={`px-2 py-1 rounded-md font-bold text-sm transition-colors ${
-                fontSize === 'large'
+              onClick={() => handleSetFontSize('large')}
+              className={`px-2.5 py-1 rounded-md font-bold text-sm transition-colors ${
+                currentFontSize === 'large'
                   ? 'bg-white dark:bg-zinc-900 text-amber-500 shadow-xs'
                   : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
-              title="Large font size"
+              title="Grossir le texte (conservé par défaut d'une session à l'autre)"
+              aria-label="Grossir le texte"
             >
               A+
             </button>
@@ -390,19 +411,27 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           {/* Full Article Content */}
           <div
             className={`prose prose-zinc dark:prose-invert max-w-none transition-all ${
-              fontSize === 'large'
-                ? 'text-lg leading-relaxed'
-                : 'text-base leading-relaxed'
+              currentFontSize === 'large'
+                ? 'text-lg sm:text-xl leading-relaxed [&_p]:text-lg sm:[&_p]:text-xl [&_p]:leading-relaxed [&_li]:text-lg sm:[&_li]:text-xl [&_div]:text-lg sm:[&_div]:text-xl'
+                : 'text-base leading-relaxed [&_p]:text-base [&_p]:leading-relaxed [&_li]:text-base'
             } text-zinc-800 dark:text-zinc-200`}
           >
             {processedHtml ? (
               <div
                 onClick={handleArticleContentClick}
                 dangerouslySetInnerHTML={{ __html: processedHtml }}
-                className="space-y-4 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-4 [&_a]:text-amber-600 dark:[&_a]:text-amber-400 [&_a]:underline hover:[&_a]:text-amber-700 dark:hover:[&_a]:text-amber-300 [&_p]:leading-relaxed break-words"
+                className={`space-y-4 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-4 [&_a]:text-amber-600 dark:[&_a]:text-amber-400 [&_a]:underline hover:[&_a]:text-amber-700 dark:hover:[&_a]:text-amber-300 ${
+                  currentFontSize === 'large'
+                    ? 'text-lg sm:text-xl [&_p]:text-lg sm:[&_p]:text-xl [&_p]:leading-relaxed [&_li]:text-lg sm:[&_li]:text-xl [&_div]:text-lg sm:[&_div]:text-xl'
+                    : 'text-base [&_p]:text-base [&_p]:leading-relaxed [&_li]:text-base'
+                } break-words`}
               />
             ) : article.contentSnippet ? (
-              <p className="leading-relaxed text-zinc-700 dark:text-zinc-300">
+              <p
+                className={`leading-relaxed text-zinc-700 dark:text-zinc-300 ${
+                  currentFontSize === 'large' ? 'text-lg sm:text-xl leading-relaxed' : 'text-base'
+                }`}
+              >
                 {article.contentSnippet}
               </p>
             ) : (
