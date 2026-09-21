@@ -1,1 +1,64 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Theme-matched Custom Scrollbars */
+:root {
+  --scrollbar-thumb: #d4d4d8;
+  --scrollbar-thumb-hover: #f59e0b;
+}
+
+html.dark,
+:root.dark {
+  --scrollbar-thumb: #3f3f46;
+  --scrollbar-thumb-hover: #f59e0b;
+}
+
+/* Firefox standards */
+html:not(.dark) * {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+html.dark * {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+/* WebKit / Chromium / Safari / Edge */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d4d4d8;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.15s ease-in-out;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #f59e0b;
+}
+
+html.dark ::-webkit-scrollbar-thumb,
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover,
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #f59e0b;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

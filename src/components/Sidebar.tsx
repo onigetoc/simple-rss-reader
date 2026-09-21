@@ -16,10 +16,12 @@ import {
   Info,
   X,
   Layers,
+  Newspaper,
+  Database,
 } from 'lucide-react';
 import { FeedItem, FeedMetadata } from '../types';
 import { PRESET_FEEDS } from '../data/presets';
-import { FeedHistoryItem } from '../services/rssService';
+import { FeedHistoryItem, CachedFeedEntry } from '../services/rssService';
 
 interface SidebarProps {
   currentUrl: string;
@@ -31,14 +33,17 @@ interface SidebarProps {
   history: FeedHistoryItem[];
   onSelectFeed: (url: string) => void;
   onRemoveHistory: (url: string) => void;
-  activeTab: 'feed' | 'favorites' | 'history' | 'presets';
-  setActiveTab: (tab: 'feed' | 'favorites' | 'history' | 'presets') => void;
+  activeTab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets';
+  setActiveTab: (tab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets') => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onRefresh: () => void;
   searchTerm: string;
   onSearchChange: (term: string) => void;
   onOpenChromeHelp: () => void;
+  cachedFeeds?: Record<string, CachedFeedEntry>;
+  onClearCache?: () => void;
+  onPreloadSamples?: () => void;
   className?: string;
   onCloseMobile?: () => void;
 }
@@ -61,10 +66,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   searchTerm,
   onSearchChange,
   onOpenChromeHelp,
+  cachedFeeds = {},
+  onClearCache,
+  onPreloadSamples,
   className = '',
   onCloseMobile,
 }) => {
   const [copiedExtensionUrl, setCopiedExtensionUrl] = useState(false);
+  const cachedFeedList = Object.values(cachedFeeds);
+  const totalCachedArticles = cachedFeedList.reduce((acc, f) => acc + (f.items?.length || 0), 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       id="sidebar-panel"
-      className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col h-full bg-zinc-900/95 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800/80 text-zinc-100 ${className}`}
+      className={`w-full md:w-80 lg:w-96 flex-shrink-0 flex flex-col h-full bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800/80 text-zinc-900 dark:text-zinc-100 ${className}`}
     >
       {/* Sidebar Header */}
       <div className="p-4 border-b border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between">
@@ -94,10 +104,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Rss className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+            <h1 className="text-base font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-2">
               RSS Viewer
             </h1>
-            <p className="text-[11px] text-zinc-400">Feed reader & URL gateway</p>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Feed reader & URL gateway</p>
           </div>
         </div>
 
@@ -105,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             type="button"
             onClick={onToggleTheme}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -114,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               onClick={onCloseMobile}
-              className="md:hidden p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+              className="md:hidden p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
             >
               <X className="w-5 h-5" />
             </button>
@@ -123,10 +133,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Primary RSS URL Input Box (Simplified, clean, intuitive) */}
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800/80 bg-zinc-900/50">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-900/50">
         <label
           htmlFor="rss-input"
-          className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2"
+          className="block text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2"
         >
           RSS Feed URL <span className="text-amber-500 lowercase font-normal">(or ?rss=URL)</span>
         </label>
@@ -138,13 +148,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               value={currentUrl}
               onChange={(e) => onUrlChange(e.target.value)}
               placeholder="Paste or enter feed URL..."
-              className="w-full text-sm pl-3 pr-8 py-2.5 rounded-lg bg-zinc-800/90 border border-zinc-700/80 text-zinc-100 placeholder-zinc-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all"
+              className="w-full text-sm pl-3 pr-8 py-2.5 rounded-lg bg-white dark:bg-zinc-800/90 border border-zinc-300 dark:border-zinc-700/80 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-hidden focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all"
             />
             {currentUrl && (
               <button
                 type="button"
                 onClick={() => onUrlChange('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
                 title="Clear input"
               >
                 <X className="w-3.5 h-3.5" />
@@ -156,7 +166,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="submit"
               disabled={isLoading || !currentUrl.trim()}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 font-bold text-xs tracking-wide transition-colors shadow-xs"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 font-bold text-xs tracking-wide transition-colors shadow-xs cursor-pointer"
             >
               {isLoading ? (
                 <>
@@ -176,7 +186,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 onClick={onRefresh}
                 disabled={isLoading}
-                className="py-2.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs border border-zinc-700/60 transition-colors"
+                className="py-2.5 px-3 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs border border-zinc-200 dark:border-zinc-700/60 transition-colors"
                 title="Refresh feed"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -186,21 +196,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </form>
 
         {/* Chrome Extension integration helper badge */}
-        <div className="mt-3 p-2.5 rounded-lg bg-amber-950/20 border border-amber-900/30 text-[11px] text-amber-200/90 flex flex-col gap-1.5">
+        <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-900 dark:text-amber-200/90 flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-amber-300 flex items-center gap-1">
+            <span className="font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1">
               <Globe className="w-3 h-3" />
               Chrome Extension URL:
             </span>
             <button
               type="button"
               onClick={handleCopyChromeFormat}
-              className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-medium"
+              className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 font-medium"
               title="Copy URL with ?rss= parameter"
             >
               {copiedExtensionUrl ? (
                 <>
-                  <Check className="w-3 h-3 text-emerald-400" />
+                  <Check className="w-3 h-3 text-emerald-500" />
                   <span>Copied!</span>
                 </>
               ) : (
@@ -211,13 +221,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </button>
           </div>
-          <code className="bg-black/40 px-1.5 py-0.5 rounded text-[10px] font-mono text-zinc-300 truncate">
+          <code className="bg-amber-500/15 dark:bg-black/40 px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-950 dark:text-zinc-300 truncate">
             /?rss=YOUR_FEED_URL
           </code>
           <button
             type="button"
             onClick={onOpenChromeHelp}
-            className="text-left text-[10px] text-amber-400/80 hover:text-amber-300 underline underline-offset-2 flex items-center gap-1 mt-0.5"
+            className="text-left text-[10px] text-amber-700 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-300 underline underline-offset-2 flex items-center gap-1 mt-0.5"
           >
             <Info className="w-3 h-3" />
             How to configure with Chrome Extension?
@@ -226,14 +236,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center border-b border-zinc-200 dark:border-zinc-800/80 text-xs px-2 pt-1">
+      <div className="flex items-center border-b border-zinc-200 dark:border-zinc-800/80 text-xs px-1 pt-1 overflow-x-auto bg-zinc-50/60 dark:bg-zinc-900/30">
         <button
           type="button"
           onClick={() => setActiveTab('feed')}
-          className={`flex-1 py-2.5 px-2 font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+          className={`py-2.5 px-2 font-medium flex items-center justify-center gap-1 border-b-2 transition-colors flex-shrink-0 cursor-pointer ${
             activeTab === 'feed'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+              : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
@@ -242,17 +252,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveTab('all-feeds')}
+          title="ALL Feeds (All in-memory RSS feeds sorted by date)"
+          className={`py-2.5 px-2 font-medium flex items-center justify-center gap-1 border-b-2 transition-colors flex-shrink-0 cursor-pointer ${
+            activeTab === 'all-feeds'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+              : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+          }`}
+        >
+          <Newspaper className="w-3.5 h-3.5" />
+          <span>ALL Feeds</span>
+          {cachedFeedList.length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 text-[10px] font-bold">
+              {cachedFeedList.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('favorites')}
-          className={`flex-1 py-2.5 px-2 font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+          className={`py-2.5 px-2 font-medium flex items-center justify-center gap-1 border-b-2 transition-colors flex-shrink-0 cursor-pointer ${
             activeTab === 'favorites'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+              : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
           <Bookmark className="w-3.5 h-3.5" />
           <span>Favorites</span>
           {favorites.length > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 text-[10px] font-bold">
               {favorites.length}
             </span>
           )}
@@ -261,10 +290,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('presets')}
-          className={`flex-1 py-2.5 px-2 font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+          className={`py-2.5 px-2 font-medium flex items-center justify-center gap-1 border-b-2 transition-colors flex-shrink-0 cursor-pointer ${
             activeTab === 'presets'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+              : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -274,10 +303,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('history')}
-          className={`flex-1 py-2.5 px-2 font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+          className={`py-2.5 px-2 font-medium flex items-center justify-center gap-1 border-b-2 transition-colors flex-shrink-0 cursor-pointer ${
             activeTab === 'history'
-              ? 'border-amber-500 text-amber-400'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'
+              : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
           }`}
         >
           <History className="w-3.5 h-3.5" />
@@ -287,23 +316,115 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* TAB: ALL FEEDS (IN-MEMORY AGGREGATION) */}
+        {activeTab === 'all-feeds' && (
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5" />
+                  Feeds in Memory
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                  {cachedFeedList.length} feed(s)
+                </span>
+              </div>
+              <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                All articles loaded in memory are combined and displayed by chronological order (newest first).
+              </p>
+              <div className="pt-1 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>{totalCachedArticles} total articles cached</span>
+              </div>
+            </div>
+
+            {/* In-Memory Feed List */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 px-0.5">
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">Loaded Feeds ({cachedFeedList.length})</span>
+                {cachedFeedList.length > 0 && onClearCache && (
+                  <button
+                    type="button"
+                    onClick={onClearCache}
+                    className="text-[11px] text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors cursor-pointer"
+                  >
+                    Clear Memory
+                  </button>
+                )}
+              </div>
+
+              {cachedFeedList.length === 0 ? (
+                <div className="text-center py-6 text-zinc-500 text-xs space-y-3 bg-zinc-100 dark:bg-zinc-800/40 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/40">
+                  <Newspaper className="w-7 h-7 mx-auto text-zinc-400 dark:text-zinc-500 opacity-50" />
+                  <p>No feeds loaded in memory yet.</p>
+                  {onPreloadSamples && (
+                    <button
+                      type="button"
+                      onClick={onPreloadSamples}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Preload Sample Feeds
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {cachedFeedList.map((f) => (
+                    <div
+                      key={f.url}
+                      className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectFeed(f.url);
+                          setActiveTab('feed');
+                          if (onCloseMobile) onCloseMobile();
+                        }}
+                        className="min-w-0 flex-1 text-left cursor-pointer"
+                      >
+                        <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate hover:text-amber-500 dark:hover:text-amber-400">
+                          {f.metadata?.title || f.url}
+                        </p>
+                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          {f.items?.length || 0} articles
+                        </p>
+                      </button>
+                    </div>
+                  ))}
+
+                  {onPreloadSamples && (
+                    <button
+                      type="button"
+                      onClick={onPreloadSamples}
+                      className="w-full mt-2 py-2 px-3 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white text-xs border border-zinc-200 dark:border-zinc-700/60 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+                      <span>Preload More Samples</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 1: CURRENT ACTIVE FEED */}
         {activeTab === 'feed' && (
           <div className="space-y-4">
             {metadata ? (
               <div className="space-y-3">
-                <div className="p-3 rounded-lg bg-zinc-800/60 border border-zinc-700/60 space-y-2">
+                <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <h2 className="text-sm font-bold text-white leading-tight">
+                    <h2 className="text-sm font-bold text-zinc-900 dark:text-white leading-tight">
                       {metadata.title}
                     </h2>
-                    <span className="text-[10px] font-semibold bg-zinc-700/80 text-zinc-300 px-2 py-0.5 rounded-full flex-shrink-0">
+                    <span className="text-[10px] font-semibold bg-zinc-200 dark:bg-zinc-700/80 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full flex-shrink-0">
                       {metadata.itemCount} articles
                     </span>
                   </div>
 
                   {metadata.description && (
-                    <p className="text-xs text-zinc-400 leading-relaxed line-clamp-3">
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-3">
                       {metadata.description}
                     </p>
                   )}
@@ -313,7 +434,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       href={metadata.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-amber-400 hover:underline inline-flex items-center gap-1"
+                      className="text-xs text-amber-600 dark:text-amber-400 hover:underline inline-flex items-center gap-1"
                     >
                       <Globe className="w-3 h-3" />
                       Visit source website
@@ -325,7 +446,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div>
                   <label
                     htmlFor="article-search-sidebar"
-                    className="block text-[11px] font-medium text-zinc-400 mb-1"
+                    className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1"
                   >
                     Filter articles
                   </label>
@@ -337,13 +458,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       value={searchTerm}
                       onChange={(e) => onSearchChange(e.target.value)}
                       placeholder="Keyword, title, author..."
-                      className="w-full text-xs pl-8 pr-7 py-2 rounded-lg bg-zinc-800/80 border border-zinc-700 text-zinc-100 placeholder-zinc-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                      className="w-full text-xs pl-8 pr-7 py-2 rounded-lg bg-white dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
                     />
                     {searchTerm && (
                       <button
                         type="button"
                         onClick={() => onSearchChange('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -355,7 +476,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="text-center py-8 text-zinc-500 text-xs space-y-3">
                 <Rss className="w-8 h-8 mx-auto opacity-30 text-amber-500" />
                 <p>No feed loaded yet.</p>
-                <p className="text-[11px] text-zinc-400">
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   Enter an RSS URL above or select a sample feed from the Samples tab.
                 </p>
               </div>
@@ -366,8 +487,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* TAB 2: FAVORITES */}
         {activeTab === 'favorites' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span className="font-semibold text-zinc-300">
+            <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">
                 Bookmarked Articles ({favorites.length})
               </span>
               <span className="text-[10px]">Saved locally</span>
@@ -377,7 +498,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="text-center py-8 text-zinc-500 text-xs space-y-2">
                 <Bookmark className="w-7 h-7 mx-auto opacity-30 text-amber-500" />
                 <p>No favorite articles saved.</p>
-                <p className="text-[11px] text-zinc-400">
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   Click the bookmark icon on any article card to save it here.
                 </p>
               </div>
@@ -386,17 +507,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {favorites.map((fav) => (
                   <div
                     key={fav.id}
-                    className="p-2.5 rounded-lg bg-zinc-800/70 border border-zinc-700/60 hover:bg-zinc-800 transition-colors flex flex-col gap-1 text-left"
+                    className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex flex-col gap-1 text-left"
                   >
                     <div className="flex items-start justify-between gap-1.5">
-                      <span className="text-[10px] text-amber-400 font-medium truncate max-w-[170px]">
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold truncate max-w-[170px]">
                         {fav.feedTitle || 'Feed'}
                       </span>
                       <a
                         href={fav.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[10px] text-zinc-400 hover:text-zinc-200"
+                        className="text-[10px] text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
                         title="Open external article"
                       >
                         ↗
@@ -406,7 +527,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       href={fav.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-semibold text-zinc-100 hover:text-amber-400 line-clamp-2"
+                      className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 hover:text-amber-600 dark:hover:text-amber-400 line-clamp-2"
                     >
                       {fav.title}
                     </a>
@@ -420,7 +541,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* TAB 3: SAMPLES / PRESETS */}
         {activeTab === 'presets' && (
           <div className="space-y-3">
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Select a ready-to-use popular feed:
             </p>
             <div className="space-y-2">
@@ -432,19 +553,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onSelectFeed(preset.url);
                     if (onCloseMobile) onCloseMobile();
                   }}
-                  className={`w-full p-2.5 rounded-lg text-left transition-all border ${
+                  className={`w-full p-2.5 rounded-lg text-left transition-all border cursor-pointer ${
                     currentUrl === preset.url
-                      ? 'bg-amber-950/30 border-amber-500/50 text-white'
-                      : 'bg-zinc-800/60 border-zinc-700/60 hover:bg-zinc-800 text-zinc-200'
+                      ? 'bg-amber-500/15 border-amber-500 text-amber-950 dark:text-white font-medium'
+                      : 'bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700/60 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className="text-xs font-bold text-amber-400">{preset.title}</span>
-                    <span className="text-[10px] text-zinc-400 font-medium px-1.5 py-0.5 rounded bg-zinc-700/50">
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{preset.title}</span>
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium px-1.5 py-0.5 rounded bg-zinc-200/80 dark:bg-zinc-700/50">
                       {preset.category}
                     </span>
                   </div>
-                  <p className="text-[11px] text-zinc-400 line-clamp-1">{preset.description}</p>
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-1">{preset.description}</p>
                 </button>
               ))}
             </div>
@@ -454,8 +575,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* TAB 4: HISTORY */}
         {activeTab === 'history' && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-zinc-400">
-              <span className="font-semibold text-zinc-300">Recent Feeds</span>
+            <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">Recent Feeds</span>
               <span className="text-[10px]">{history.length} saved</span>
             </div>
 
@@ -469,7 +590,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {history.map((h) => (
                   <div
                     key={h.url}
-                    className="p-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-800 transition-colors"
+                    className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                   >
                     <button
                       type="button"
@@ -477,9 +598,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onSelectFeed(h.url);
                         if (onCloseMobile) onCloseMobile();
                       }}
-                      className="min-w-0 flex-1 text-left"
+                      className="min-w-0 flex-1 text-left cursor-pointer"
                     >
-                      <p className="text-xs font-semibold text-zinc-200 truncate hover:text-amber-400">
+                      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-200 truncate hover:text-amber-600 dark:hover:text-amber-400">
                         {h.title || h.url}
                       </p>
                       <p className="text-[10px] text-zinc-500 truncate">{h.url}</p>
@@ -487,7 +608,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       onClick={() => onRemoveHistory(h.url)}
-                      className="text-zinc-500 hover:text-red-400 p-1 rounded transition-colors"
+                      className="text-zinc-400 hover:text-red-500 p-1 rounded transition-colors cursor-pointer"
                       title="Remove from history"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -506,7 +627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           type="button"
           onClick={onOpenChromeHelp}
-          className="hover:text-amber-400 flex items-center gap-1 transition-colors"
+          className="hover:text-amber-500 dark:hover:text-amber-400 flex items-center gap-1 transition-colors cursor-pointer"
         >
           <Info className="w-3.5 h-3.5" />
           Extension setup

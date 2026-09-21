@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -17,6 +17,39 @@ import {
 } from 'lucide-react';
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
+
+/**
+ * Transforms article HTML so that every link opens in a new tab (_blank),
+ * has secure rel="noopener noreferrer", and images don't leak referrers.
+ */
+function ensureBlankLinks(rawHtml?: string): string {
+  if (!rawHtml) return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawHtml, 'text/html');
+    const links = doc.querySelectorAll('a');
+    links.forEach((link) => {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+      if (!link.getAttribute('title')) {
+        link.setAttribute('title', 'Opens in a new tab');
+      }
+    });
+
+    const images = doc.querySelectorAll('img');
+    images.forEach((img) => {
+      img.setAttribute('loading', 'lazy');
+      img.setAttribute('referrerpolicy', 'no-referrer');
+    });
+
+    return doc.body.innerHTML;
+  } catch {
+    return rawHtml.replace(
+      /<a\b(?![^>]*\btarget=)([^>]*?)>/gi,
+      '<a target="_blank" rel="noopener noreferrer"$1>'
+    );
+  }
+}
 
 interface ArticleReaderViewProps {
   article: FeedItem;
@@ -49,6 +82,22 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [fontSize, setFontSize] = useState<'normal' | 'large'>('normal');
+
+  // Prepare article HTML with all links opening in target="_blank"
+  const processedHtml = useMemo(() => {
+    const raw = article.content || article.description || '';
+    return ensureBlankLinks(raw);
+  }, [article.content, article.description]);
+
+  // Click delegation ensuring any link clicked opens in a new blank tab
+  const handleArticleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    const link = target?.closest('a');
+    if (link && link.href) {
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
+    }
+  };
 
   // Check YouTube video ID
   const ytVideoId =
@@ -346,15 +395,11 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
                 : 'text-base leading-relaxed'
             } text-zinc-800 dark:text-zinc-200`}
           >
-            {article.content ? (
+            {processedHtml ? (
               <div
-                dangerouslySetInnerHTML={{ __html: article.content }}
-                className="space-y-4 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-4 [&_a]:text-amber-500 [&_a]:underline [&_p]:leading-relaxed"
-              />
-            ) : article.description ? (
-              <div
-                dangerouslySetInnerHTML={{ __html: article.description }}
-                className="space-y-4 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-4 [&_a]:text-amber-500 [&_a]:underline [&_p]:leading-relaxed"
+                onClick={handleArticleContentClick}
+                dangerouslySetInnerHTML={{ __html: processedHtml }}
+                className="space-y-4 [&_img]:rounded-xl [&_img]:max-w-full [&_img]:my-4 [&_a]:text-amber-600 dark:[&_a]:text-amber-400 [&_a]:underline hover:[&_a]:text-amber-700 dark:hover:[&_a]:text-amber-300 [&_p]:leading-relaxed break-words"
               />
             ) : article.contentSnippet ? (
               <p className="leading-relaxed text-zinc-700 dark:text-zinc-300">

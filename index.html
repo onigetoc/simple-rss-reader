@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,11 +9,25 @@
     <meta property="og:description" content="Modern, lightweight RSS feed viewer with URL query parameter support (?rss=), media previews, and local favorites." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var storedTheme = localStorage.getItem('rss_viewer_theme_v1') || localStorage.getItem('rss_viewer_theme');
+          if (storedTheme === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
   </head>
-  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-amber-500/20 selection:text-amber-300">
+  <body class="bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 antialiased selection:bg-amber-500/20 selection:text-amber-500">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

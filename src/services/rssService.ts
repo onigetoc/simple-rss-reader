@@ -3,6 +3,7 @@ import { FeedItem, FeedMetadata, FeedResponse } from '../types';
 const STORAGE_FAVORITES_KEY = 'rss_viewer_favorites_v1';
 const STORAGE_HISTORY_KEY = 'rss_viewer_history_v1';
 const STORAGE_THEME_KEY = 'rss_viewer_theme_v1';
+const STORAGE_FEEDS_CACHE_KEY = 'rss_viewer_feeds_cache_v2';
 
 export async function fetchFeed(url: string): Promise<FeedResponse> {
   const trimmed = url.trim();
@@ -232,3 +233,120 @@ export function setStoredTheme(theme: 'dark' | 'light'): void {
     // ignore
   }
 }
+
+// In-memory & Persistent Feeds Cache
+export interface CachedFeedEntry {
+  url: string;
+  metadata: FeedMetadata;
+  items: FeedItem[];
+  updatedAt: number;
+}
+
+export function getCachedFeeds(): Record<string, CachedFeedEntry> {
+  try {
+    const raw = localStorage.getItem(STORAGE_FEEDS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveFeedToCache(
+  url: string,
+  metadata: FeedMetadata,
+  items: FeedItem[]
+): Record<string, CachedFeedEntry> {
+  try {
+    const cache = getCachedFeeds();
+    cache[url] = {
+      url,
+      metadata,
+      items: items.map((it) => ({
+        ...it,
+        feedTitle: it.feedTitle || metadata.title,
+        feedUrl: it.feedUrl || url,
+      })),
+      updatedAt: Date.now(),
+    };
+
+    // Cap cache at 30 feeds to stay performant
+    const keys = Object.keys(cache);
+    if (keys.length > 30) {
+      const sortedKeys = keys.sort((a, b) => cache[b].updatedAt - cache[a].updatedAt);
+      const pruned: Record<string, CachedFeedEntry> = {};
+      for (const k of sortedKeys.slice(0, 30)) {
+        pruned[k] = cache[k];
+      }
+      localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(pruned));
+      return pruned;
+    }
+
+    localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(cache));
+    return cache;
+  } catch (err) {
+    console.warn('Failed to save feed cache:', err);
+    return {};
+  }
+}
+
+export function removeFeedFromCache(url: string): Record<string, CachedFeedEntry> {
+  try {
+    const cache = getCachedFeeds();
+    delete cache[url];
+    localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(cache));
+    return cache;
+  } catch {
+    return {};
+  }
+}
+
+export function clearFeedsCache(): void {
+  try {
+    localStorage.removeItem(STORAGE_FEEDS_CACHE_KEY);
+  } catch {}
+}
+
+/**
+ * Returns all articles from all cached feeds in memory,
+ * deduplicated and sorted by date in descending order (newest first).
+ */
+export function getAllCachedItemsSorted(cache: Record<string, CachedFeedEntry>): FeedItem[] {
+  const seenIds = new Set<string>();
+  const merged: FeedItem[] = [];
+
+  const feeds = Object.values(cache);
+  for (const feed of feeds) {
+    for (const item of feed.items) {
+      const uniqueKey = item.id || item.link;
+      if (!seenIds.has(uniqueKey)) {
+        seenIds.add(uniqueKey);
+        merged.push({
+          ...item,
+          feedTitle: item.feedTitle || feed.metadata?.title || 'RSS Feed',
+          feedUrl: item.feedUrl || feed.url,
+        });
+      }
+    }
+  }
+
+  // Parse dates robustly
+  const parseTime = (dateStr?: string): number => {
+    if (!dateStr) return 0;
+    const t = new Date(dateStr).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
+  // Sort descending: newest to oldest
+  merged.sort((a, b) => {
+    const timeA = parseTime(a.isoDate || a.pubDate);
+    const timeB = parseTime(b.isoDate || b.pubDate);
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    // Secondary fallback: compare titles
+    return a.title.localeCompare(b.title);
+  });
+
+  return merged;
+}
+

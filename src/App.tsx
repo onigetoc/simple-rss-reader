@@ -13,6 +13,9 @@ import {
   Check,
   Image as ImageIcon,
   X,
+  Newspaper,
+  Layers,
+  Sparkles,
 } from 'lucide-react';
 import { FeedItem, FeedMetadata, FeedResponse } from './types';
 import { PRESET_FEEDS } from './data/presets';
@@ -27,11 +30,19 @@ import {
   getStoredTheme,
   setStoredTheme,
   FeedHistoryItem,
+  CachedFeedEntry,
+  getCachedFeeds,
+  saveFeedToCache,
+  clearFeedsCache,
+  getAllCachedItemsSorted,
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
 import { ArticleReaderView } from './components/ArticleReaderView';
 import { ChromeExtensionHelpModal } from './components/ChromeExtensionHelpModal';
+
+// Number of articles to display at a time
+const PAGE_SIZE = 20;
 
 // Helper to remove accents and lower case for bulletproof searching
 function normalizeText(text?: string): string {
@@ -54,6 +65,11 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // In-Memory Feeds Cache (all feeds visited and stored)
+  const [cachedFeeds, setCachedFeeds] = useState<Record<string, CachedFeedEntry>>(() =>
+    getCachedFeeds()
+  );
+
   // Selected article for detailed reader view
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
@@ -62,12 +78,15 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [mediaFilter, setMediaFilter] = useState<'all' | 'with-media'>('all');
 
+  // Pagination state: show 20 at a time by default
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
+
   // Persistence: Favorites & History
   const [favorites, setFavorites] = useState<FeedItem[]>(() => getSavedFavorites());
   const [history, setHistory] = useState<FeedHistoryItem[]>(() => getFeedHistory());
 
   // Sidebar navigation tab
-  const [activeTab, setActiveTab] = useState<'feed' | 'favorites' | 'history' | 'presets'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets'>('feed');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   // Modals & UI helpers
@@ -113,6 +132,10 @@ export default function App() {
       setMetadata(result.metadata);
       setItems(result.items);
 
+      // Save to in-memory feeds cache
+      const updatedCache = saveFeedToCache(trimmed, result.metadata, result.items);
+      setCachedFeeds({ ...updatedCache });
+
       // Save to history
       if (result.metadata?.title) {
         const updatedHistory = addToFeedHistory(trimmed, result.metadata.title);
@@ -136,9 +159,45 @@ export default function App() {
     }
   }, []);
 
+  // All items currently cached in memory, merged and sorted by date (newest first)
+  const allCachedItems = useMemo(() => {
+    return getAllCachedItemsSorted(cachedFeeds);
+  }, [cachedFeeds]);
+
+  // Reset pagination to 20 whenever activeTab, search, mediaFilter, or activeUrl changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [activeTab, searchTerm, mediaFilter, activeUrl]);
+
+  // Preload several sample feeds into memory
+  const handlePreloadSamples = useCallback(async () => {
+    setIsLoading(true);
+    const sampleList = PRESET_FEEDS.slice(0, 4);
+    for (const sample of sampleList) {
+      try {
+        const res = await fetchFeed(sample.url);
+        saveFeedToCache(sample.url, res.metadata, res.items);
+      } catch (e) {
+        console.warn('Preload sample error:', e);
+      }
+    }
+    setCachedFeeds(getCachedFeeds());
+    setIsLoading(false);
+  }, []);
+
+  const handleClearCache = useCallback(() => {
+    clearFeedsCache();
+    setCachedFeeds({});
+  }, []);
+
   // Filtered items with accent-insensitive search across all text fields
   const displayedItems = useMemo(() => {
-    let list = activeTab === 'favorites' ? favorites : items;
+    let list =
+      activeTab === 'favorites'
+        ? favorites
+        : activeTab === 'all-feeds'
+        ? allCachedItems
+        : items;
 
     if (searchTerm.trim()) {
       const normalizedQuery = normalizeText(searchTerm.trim());
@@ -149,6 +208,7 @@ export default function App() {
         const contentNorm = normalizeText(item.content);
         const creatorNorm = normalizeText(item.creator);
         const authorNorm = normalizeText(item.author);
+        const feedTitleNorm = normalizeText(item.feedTitle);
         const categoriesNorm = item.categories?.map(normalizeText).join(' ') || '';
 
         return (
@@ -158,6 +218,7 @@ export default function App() {
           contentNorm.includes(normalizedQuery) ||
           creatorNorm.includes(normalizedQuery) ||
           authorNorm.includes(normalizedQuery) ||
+          feedTitleNorm.includes(normalizedQuery) ||
           categoriesNorm.includes(normalizedQuery)
         );
       });
@@ -168,7 +229,12 @@ export default function App() {
     }
 
     return list;
-  }, [activeTab, favorites, items, searchTerm, mediaFilter]);
+  }, [activeTab, favorites, allCachedItems, items, searchTerm, mediaFilter]);
+
+  // 20-at-a-time paginated list of items for the grid/cards view
+  const paginatedItems = useMemo(() => {
+    return displayedItems.slice(0, visibleCount);
+  }, [displayedItems, visibleCount]);
 
   // Find currently selected article
   const selectedArticle = useMemo(() => {
@@ -321,6 +387,9 @@ export default function App() {
           if (selectedArticleId) setSelectedArticleId(null);
         }}
         onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
+        cachedFeeds={cachedFeeds}
+        onClearCache={handleClearCache}
+        onPreloadSamples={handlePreloadSamples}
         className="hidden md:flex"
       />
 
@@ -355,6 +424,9 @@ export default function App() {
               if (selectedArticleId) setSelectedArticleId(null);
             }}
             onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
+            cachedFeeds={cachedFeeds}
+            onClearCache={handleClearCache}
+            onPreloadSamples={handlePreloadSamples}
             className="relative z-50 w-80 h-full"
             onCloseMobile={() => setIsMobileSidebarOpen(false)}
           />
@@ -408,16 +480,27 @@ export default function App() {
                     <h1 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
                       {activeTab === 'favorites'
                         ? 'Bookmarked Articles'
+                        : activeTab === 'all-feeds'
+                        ? 'ALL Feeds (In Memory)'
                         : metadata?.title || 'RSS Feed Reader'}
                     </h1>
-                    {metadata?.itemCount !== undefined && activeTab !== 'favorites' && (
+                    {activeTab === 'feed' && metadata?.itemCount !== undefined && (
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hidden sm:inline-block flex-shrink-0">
                         {displayedItems.length}
                         {searchTerm ? ` / ${items.length}` : ''} articles
                       </span>
                     )}
+                    {activeTab === 'all-feeds' && (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 hidden sm:inline-block flex-shrink-0">
+                        {displayedItems.length} articles • {Object.keys(cachedFeeds).length} feeds
+                      </span>
+                    )}
                   </div>
-                  {activeUrl && activeTab !== 'favorites' && (
+                  {activeTab === 'all-feeds' ? (
+                    <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                      <span>All in-memory RSS feeds sorted chronologically (newest first) • 20 at a time</span>
+                    </div>
+                  ) : activeUrl && activeTab !== 'favorites' ? (
                     <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 truncate">
                       <span className="truncate">{activeUrl}</span>
                       {metadata?.link && (
@@ -432,7 +515,7 @@ export default function App() {
                         </a>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -443,7 +526,11 @@ export default function App() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search articles..."
+                  placeholder={
+                    activeTab === 'all-feeds'
+                      ? 'Search all in-memory feeds...'
+                      : 'Search articles...'
+                  }
                   className="w-full text-xs pl-8 pr-7 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/80 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/40"
                 />
                 {searchTerm && (
@@ -458,8 +545,47 @@ export default function App() {
                 )}
               </div>
 
-              {/* Action Controls: Media Filter, View Switcher, Share */}
+              {/* Action Controls: ALL Feeds, Media Filter, View Switcher, Share */}
               <div className="flex items-center gap-2 flex-shrink-0">
+                {/* ALL Feeds Tooltip Button */}
+                <div className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab((prev) => (prev === 'all-feeds' ? 'feed' : 'all-feeds'));
+                      setSelectedArticleId(null);
+                    }}
+                    title="ALL Feeds"
+                    aria-label="ALL Feeds"
+                    className={`p-2 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all shadow-xs ${
+                      activeTab === 'all-feeds'
+                        ? 'bg-amber-500 text-zinc-950 border-amber-400 font-bold ring-2 ring-amber-500/30'
+                        : 'bg-zinc-100 dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    <Newspaper className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">ALL Feeds</span>
+                    {Object.keys(cachedFeeds).length > 0 && (
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                          activeTab === 'all-feeds'
+                            ? 'bg-zinc-950/25 text-zinc-950'
+                            : 'bg-amber-500/20 text-amber-500'
+                        }`}
+                      >
+                        {Object.keys(cachedFeeds).length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Floating visual tooltip */}
+                  <div className="absolute right-0 top-full mt-2 hidden group-hover:flex flex-col items-end z-50 pointer-events-none">
+                    <div className="bg-zinc-900 text-white text-[11px] font-medium py-1.5 px-3 rounded-md shadow-xl border border-zinc-700 whitespace-nowrap">
+                      ALL Feeds • All RSS in memory sorted by date (20 at a time)
+                    </div>
+                  </div>
+                </div>
+
                 {/* Media Filter Button */}
                 <button
                   type="button"
@@ -630,7 +756,11 @@ export default function App() {
                 {!isLoading && !error && displayedItems.length === 0 && (
                   <div className="text-center py-16 px-4 space-y-4 max-w-md mx-auto">
                     <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
-                      <Rss className="w-7 h-7" />
+                      {activeTab === 'all-feeds' ? (
+                        <Newspaper className="w-7 h-7" />
+                      ) : (
+                        <Rss className="w-7 h-7" />
+                      )}
                     </div>
                     <div className="space-y-1">
                       <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
@@ -638,15 +768,19 @@ export default function App() {
                           ? 'No articles match your search'
                           : activeTab === 'favorites'
                           ? 'No bookmarked articles yet'
+                          : activeTab === 'all-feeds'
+                          ? 'No feeds loaded in memory yet'
                           : 'No articles found in this feed'}
                       </h3>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                         {searchTerm
                           ? `No results for "${searchTerm}". Try checking your spelling or clear the filter.`
+                          : activeTab === 'all-feeds'
+                          ? 'Load any RSS feeds from the sidebar or click below to preload sample feeds into memory.'
                           : 'Select a feed from the left panel or enter a custom RSS URL to get started.'}
                       </p>
                     </div>
-                    {searchTerm && (
+                    {searchTerm ? (
                       <button
                         type="button"
                         onClick={() => setSearchTerm('')}
@@ -654,29 +788,114 @@ export default function App() {
                       >
                         Clear search
                       </button>
-                    )}
+                    ) : activeTab === 'all-feeds' ? (
+                      <button
+                        type="button"
+                        onClick={handlePreloadSamples}
+                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-zinc-950 text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Preload Sample Feeds</span>
+                      </button>
+                    ) : null}
                   </div>
                 )}
 
-                {/* Articles List */}
-                {!isLoading && displayedItems.length > 0 && (
-                  <div
-                    className={`grid gap-5 ${
-                      viewMode === 'compact'
-                        ? 'grid-cols-1'
-                        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-                    }`}
-                  >
-                    {displayedItems.map((item) => (
-                      <FeedItemCard
-                        key={item.id}
-                        item={item}
-                        isFavorite={isItemFavorite(item, favorites)}
-                        onToggleFavorite={handleToggleFavorite}
-                        onSelectArticle={handleSelectArticle}
-                        viewMode={viewMode}
-                      />
-                    ))}
+                {/* ALL Feeds Info Banner (when viewing in-memory aggregation) */}
+                {!isLoading && activeTab === 'all-feeds' && displayedItems.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-200">
+                      <span className="p-1 rounded-md bg-amber-500/20 text-amber-500">
+                        <Newspaper className="w-3.5 h-3.5" />
+                      </span>
+                      <span>
+                        Displaying <strong>{displayedItems.length}</strong> articles merged from{' '}
+                        <strong>{Object.keys(cachedFeeds).length}</strong> feed(s) in memory, sorted by publication date.
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 self-start sm:self-auto">
+                      Showing 20 at a time
+                    </span>
+                  </div>
+                )}
+
+                {/* Articles List (Paginated 20 at a time) */}
+                {!isLoading && paginatedItems.length > 0 && (
+                  <div className="space-y-6">
+                    <div
+                      className={`grid gap-5 ${
+                        viewMode === 'compact'
+                          ? 'grid-cols-1'
+                          : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+                      }`}
+                    >
+                      {paginatedItems.map((item) => (
+                        <FeedItemCard
+                          key={item.id}
+                          item={item}
+                          isFavorite={isItemFavorite(item, favorites)}
+                          onToggleFavorite={handleToggleFavorite}
+                          onSelectArticle={handleSelectArticle}
+                          viewMode={viewMode}
+                        />
+                      ))}
+                    </div>
+
+                    {/* 20-at-a-time pagination controls */}
+                    {displayedItems.length > PAGE_SIZE && (
+                      <div className="pt-6 pb-12 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-zinc-200 dark:border-zinc-800/80">
+                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                          Showing{' '}
+                          <strong className="text-zinc-900 dark:text-zinc-100 font-bold">
+                            {Math.min(visibleCount, displayedItems.length)}
+                          </strong>{' '}
+                          of{' '}
+                          <strong className="text-zinc-900 dark:text-zinc-100 font-bold">
+                            {displayedItems.length}
+                          </strong>{' '}
+                          articles (20 at a time)
+                          {activeTab === 'all-feeds' && ` • ${Object.keys(cachedFeeds).length} feeds in memory`}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {visibleCount < displayedItems.length && (
+                            <button
+                              type="button"
+                              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>Load 20 more articles</span>
+                              <span className="text-[10px] opacity-80 font-normal">
+                                (+{Math.min(PAGE_SIZE, displayedItems.length - visibleCount)})
+                              </span>
+                            </button>
+                          )}
+
+                          {visibleCount < displayedItems.length && (
+                            <button
+                              type="button"
+                              onClick={() => setVisibleCount(displayedItems.length)}
+                              className="px-3.5 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Show all ({displayedItems.length})
+                            </button>
+                          )}
+
+                          {visibleCount > PAGE_SIZE && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVisibleCount(PAGE_SIZE);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-medium text-xs transition-colors cursor-pointer"
+                            >
+                              Reset to 20
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
