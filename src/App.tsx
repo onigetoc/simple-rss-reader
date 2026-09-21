@@ -43,17 +43,23 @@ import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
 import { ArticleReaderView } from './components/ArticleReaderView';
 import { ChromeExtensionHelpModal } from './components/ChromeExtensionHelpModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Number of articles to display at a time
 const PAGE_SIZE = 20;
 
 // Helper to remove accents and lower case for bulletproof searching
-function normalizeText(text?: string): string {
+function normalizeText(text?: any): string {
   if (!text) return '';
-  return text
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+  const str = typeof text === 'string' ? text : text?._ || text?.value || text?.name || String(text);
+  try {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  } catch {
+    return String(str).toLowerCase();
+  }
 }
 
 export default function App() {
@@ -448,28 +454,33 @@ export default function App() {
       <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
         {/* If an article is selected, show ArticleReaderView */}
         {selectedArticle ? (
-          <ArticleReaderView
-            article={selectedArticle}
-            onBack={handleBackToList}
-            onNext={handleNextArticle}
-            onPrev={handlePrevArticle}
-            hasNext={currentArticleIndex < displayedItems.length - 1}
-            hasPrev={currentArticleIndex > 0}
-            nextTitle={
-              currentArticleIndex < displayedItems.length - 1
-                ? displayedItems[currentArticleIndex + 1]?.title
-                : undefined
-            }
-            prevTitle={
-              currentArticleIndex > 0 ? displayedItems[currentArticleIndex - 1]?.title : undefined
-            }
-            isFavorite={isItemFavorite(selectedArticle, favorites)}
-            onToggleFavorite={handleToggleFavorite}
-            currentIndex={currentArticleIndex}
-            totalCount={displayedItems.length}
-            fontSize={fontSize}
-            onFontSizeChange={handleFontSizeChange}
-          />
+          <ErrorBoundary
+            fallbackTitle="Impossible d'afficher cet article"
+            onReset={handleBackToList}
+          >
+            <ArticleReaderView
+              article={selectedArticle}
+              onBack={handleBackToList}
+              onNext={handleNextArticle}
+              onPrev={handlePrevArticle}
+              hasNext={currentArticleIndex < displayedItems.length - 1}
+              hasPrev={currentArticleIndex > 0}
+              nextTitle={
+                currentArticleIndex < displayedItems.length - 1
+                  ? displayedItems[currentArticleIndex + 1]?.title
+                  : undefined
+              }
+              prevTitle={
+                currentArticleIndex > 0 ? displayedItems[currentArticleIndex - 1]?.title : undefined
+              }
+              isFavorite={isItemFavorite(selectedArticle, favorites)}
+              onToggleFavorite={handleToggleFavorite}
+              currentIndex={currentArticleIndex}
+              totalCount={displayedItems.length}
+              fontSize={fontSize}
+              onFontSizeChange={handleFontSizeChange}
+            />
+          </ErrorBoundary>
         ) : (
           /* OTHERWISE: FEED LIST VIEW */
           <>

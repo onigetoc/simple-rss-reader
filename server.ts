@@ -165,6 +165,35 @@ function extractVideo(item: CustomItem): string | undefined {
     return item.enclosure.url;
   }
 
+  // Check mediaContent for direct video files or streams
+  if (Array.isArray(item.mediaContent) && item.mediaContent.length > 0) {
+    for (const m of item.mediaContent) {
+      const url = m?.$?.url || m?.url;
+      const medium = m?.$?.medium || m?.medium;
+      const type = m?.$?.type || m?.type;
+      if (
+        url &&
+        (medium === 'video' ||
+          type?.startsWith('video/') ||
+          /\.(mp4|webm|m4v)(\?.*)?$/i.test(url))
+      ) {
+        return url;
+      }
+    }
+  } else if (item.mediaContent) {
+    const url = item.mediaContent?.$?.url || item.mediaContent?.url;
+    const medium = item.mediaContent?.$?.medium || item.mediaContent?.medium;
+    const type = item.mediaContent?.$?.type || item.mediaContent?.type;
+    if (
+      url &&
+      (medium === 'video' ||
+        type?.startsWith('video/') ||
+        /\.(mp4|webm|m4v)(\?.*)?$/i.test(url))
+    ) {
+      return url;
+    }
+  }
+
   // Check YouTube in links, id, or content
   const contentToSearch = [item.contentEncoded, item.content, item.description]
     .filter(Boolean)
@@ -179,6 +208,39 @@ function extractVideo(item: CustomItem): string | undefined {
   }
 
   return undefined;
+}
+
+function toSafeString(val: any, fallback = ''): string {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    if (typeof val._ === 'string') return val._;
+    if (typeof val.value === 'string') return val.value;
+    if (typeof val.name === 'string') return val.name;
+    if (typeof val['#text'] === 'string') return val['#text'];
+    if (typeof val.$text === 'string') return val.$text;
+    if (typeof val.title === 'string') return val.title;
+  }
+  return fallback;
+}
+
+function toSafeStringArray(arr: any): string[] {
+  if (!arr) return [];
+  const list = Array.isArray(arr) ? arr : [arr];
+  return list
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        if (typeof item._ === 'string') return item._.trim();
+        if (typeof item.value === 'string') return item.value.trim();
+        if (typeof item.name === 'string') return item.name.trim();
+        if (typeof item['#text'] === 'string') return item['#text'].trim();
+        if (typeof item.$text === 'string') return item.$text.trim();
+      }
+      return '';
+    })
+    .filter(Boolean);
 }
 
 function extractAudio(item: CustomItem): string | undefined {
@@ -266,51 +328,60 @@ async function startServer() {
           : undefined;
 
       const items = (parsed.items || []).map((item, index) => {
-        const id =
-          item.guid ||
-          item.id ||
-          item.link ||
-          `item-${index}-${Date.now()}`;
+        const id = toSafeString(
+          item.guid || item.id || item.link,
+          `item-${index}-${Date.now()}`
+        );
 
         const imageUrl = extractFirstImage(item, xmlText);
         const videoUrl = extractVideo(item);
         const audioUrl = extractAudio(item);
 
-        const rawContent =
-          item.contentEncoded || item.content || item.description || '';
-        const snippet =
-          item.contentSnippet ||
-          item.summary ||
-          cleanHtmlToSnippet(rawContent);
+        const rawContent = toSafeString(
+          item.contentEncoded || item.content || item.description || ''
+        );
+        const snippet = toSafeString(
+          item.contentSnippet || item.summary || cleanHtmlToSnippet(rawContent)
+        );
+
+        const title = toSafeString(item.title, 'Untitled').trim();
+        const feedTitle = toSafeString(parsed.title, 'RSS Feed').trim();
+        const creator = toSafeString(
+          item.creator || item.author,
+          feedTitle || undefined
+        );
+        const author = toSafeString(item.author || item.creator);
+        const description = toSafeString(item.description);
+        const categories = toSafeStringArray(item.categories);
 
         return {
           id: String(id),
-          title: (item.title || 'Untitled').trim(),
-          link: item.link || targetUrl,
-          pubDate: item.pubDate || item.isoDate,
-          isoDate: item.isoDate,
-          creator: item.creator || item.author || (parsed.title ? parsed.title : undefined),
-          author: item.author || item.creator,
+          title,
+          link: toSafeString(item.link, targetUrl),
+          pubDate: toSafeString(item.pubDate || item.isoDate),
+          isoDate: toSafeString(item.isoDate),
+          creator,
+          author,
           content: rawContent,
           contentSnippet: snippet,
-          description: item.description,
-          categories: Array.isArray(item.categories) ? item.categories : [],
+          description,
+          categories,
           imageUrl,
           videoUrl,
           audioUrl,
           enclosure: item.enclosure,
-          feedTitle: parsed.title || 'RSS Feed',
+          feedTitle,
           feedUrl: targetUrl,
         };
       });
 
       res.json({
         metadata: {
-          title: parsed.title || 'Unnamed RSS Feed',
-          description: parsed.description,
-          link: parsed.link || targetUrl,
+          title: toSafeString(parsed.title, 'Unnamed RSS Feed'),
+          description: toSafeString(parsed.description),
+          link: toSafeString(parsed.link, targetUrl),
           feedUrl: targetUrl,
-          lastBuildDate: parsed.lastBuildDate,
+          lastBuildDate: toSafeString(parsed.lastBuildDate),
           imageUrl: feedImageUrl,
           itemCount: items.length,
         },

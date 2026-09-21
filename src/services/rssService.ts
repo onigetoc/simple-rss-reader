@@ -8,6 +8,66 @@ const STORAGE_FEEDS_CACHE_KEY = 'rss_viewer_feeds_cache_v2';
 
 export type ArticleFontSize = 'normal' | 'large';
 
+export function toSafeString(val: any, fallback = ''): string {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    if (typeof val._ === 'string') return val._;
+    if (typeof val.value === 'string') return val.value;
+    if (typeof val.name === 'string') return val.name;
+    if (typeof val['#text'] === 'string') return val['#text'];
+    if (typeof val.$text === 'string') return val.$text;
+    if (typeof val.title === 'string') return val.title;
+  }
+  return fallback;
+}
+
+export function toSafeStringArray(arr: any): string[] {
+  if (!arr) return [];
+  const list = Array.isArray(arr) ? arr : [arr];
+  return list
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        if (typeof item._ === 'string') return item._.trim();
+        if (typeof item.value === 'string') return item.value.trim();
+        if (typeof item.name === 'string') return item.name.trim();
+        if (typeof item['#text'] === 'string') return item['#text'].trim();
+        if (typeof item.$text === 'string') return item.$text.trim();
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+export function sanitizeFeedItem(item: any): FeedItem {
+  if (!item || typeof item !== 'object') {
+    return {
+      id: String(Math.random()),
+      title: 'Untitled',
+      link: '',
+    };
+  }
+
+  return {
+    ...item,
+    id: toSafeString(item.id, String(item.link || Math.random())),
+    title: toSafeString(item.title, 'Untitled').trim(),
+    link: toSafeString(item.link),
+    pubDate: toSafeString(item.pubDate),
+    isoDate: toSafeString(item.isoDate),
+    creator: toSafeString(item.creator),
+    author: toSafeString(item.author),
+    content: toSafeString(item.content),
+    contentSnippet: toSafeString(item.contentSnippet),
+    description: toSafeString(item.description),
+    categories: toSafeStringArray(item.categories),
+    feedTitle: toSafeString(item.feedTitle),
+    feedUrl: toSafeString(item.feedUrl),
+  };
+}
+
 export async function fetchFeed(url: string): Promise<FeedResponse> {
   const trimmed = url.trim();
   if (!trimmed) {
@@ -19,7 +79,15 @@ export async function fetchFeed(url: string): Promise<FeedResponse> {
     const res = await fetch(`/api/rss?url=${encodeURIComponent(trimmed)}`);
     if (res.ok) {
       const data = await res.json();
-      return data;
+      const sanitizedItems = (data.items || []).map(sanitizeFeedItem);
+      return {
+        metadata: {
+          ...data.metadata,
+          title: toSafeString(data.metadata?.title, 'RSS Feed'),
+          description: toSafeString(data.metadata?.description),
+        },
+        items: sanitizedItems,
+      };
     } else {
       const errData = await res.json().catch(() => ({}));
       if (res.status === 400) {
@@ -143,7 +211,8 @@ export async function fetchFeed(url: string): Promise<FeedResponse> {
 export function getSavedFavorites(): FeedItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_FAVORITES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.map(sanitizeFeedItem) : [];
   } catch {
     return [];
   }
@@ -267,7 +336,25 @@ export interface CachedFeedEntry {
 export function getCachedFeeds(): Record<string, CachedFeedEntry> {
   try {
     const raw = localStorage.getItem(STORAGE_FEEDS_CACHE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    const sanitized: Record<string, CachedFeedEntry> = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === 'object') {
+        const castEntry = entry as CachedFeedEntry;
+        sanitized[key] = {
+          ...castEntry,
+          metadata: {
+            ...castEntry.metadata,
+            title: toSafeString(castEntry.metadata?.title, 'RSS Feed'),
+            description: toSafeString(castEntry.metadata?.description),
+          },
+          items: Array.isArray(castEntry.items)
+            ? castEntry.items.map(sanitizeFeedItem)
+            : [],
+        };
+      }
+    }
+    return sanitized;
   } catch {
     return {};
   }

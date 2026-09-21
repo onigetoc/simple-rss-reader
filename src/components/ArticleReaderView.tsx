@@ -24,6 +24,24 @@ import {
 } from '../services/rssService';
 
 /**
+ * Helper to safely extract string text even if feed parser returned an object
+ */
+function getSafeDisplayString(val: any): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    if (typeof val._ === 'string') return val._;
+    if (typeof val.value === 'string') return val.value;
+    if (typeof val.name === 'string') return val.name;
+    if (typeof val['#text'] === 'string') return val['#text'];
+    if (typeof val.$text === 'string') return val.$text;
+    if (typeof val.title === 'string') return val.title;
+  }
+  return '';
+}
+
+/**
  * Transforms article HTML so that every link opens in a new tab (_blank),
  * has secure rel="noopener noreferrer", and images don't leak referrers.
  */
@@ -284,12 +302,12 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           type="button"
           onClick={onPrev}
           className="fixed left-4 sm:left-6 md:left-88 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-zinc-900/90 text-white shadow-xl hover:bg-amber-500 hover:text-zinc-950 transition-all flex items-center justify-center border border-zinc-700 group focus:outline-hidden"
-          title={`Previous article: ${prevTitle || ''} (←)`}
+          title={`Previous article: ${getSafeDisplayString(prevTitle)} (←)`}
         >
           <ChevronLeft className="w-6 h-6 transform group-hover:-translate-x-0.5 transition-transform" />
           {prevTitle && (
             <span className="absolute left-14 bg-zinc-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-xl border border-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap max-w-xs truncate pointer-events-none hidden sm:block">
-              {prevTitle}
+              {getSafeDisplayString(prevTitle)}
             </span>
           )}
         </button>
@@ -300,12 +318,12 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           type="button"
           onClick={onNext}
           className="fixed right-4 sm:right-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-zinc-900/90 text-white shadow-xl hover:bg-amber-500 hover:text-zinc-950 transition-all flex items-center justify-center border border-zinc-700 group focus:outline-hidden"
-          title={`Next article: ${nextTitle || ''} (→)`}
+          title={`Next article: ${getSafeDisplayString(nextTitle)} (→)`}
         >
           <ChevronRight className="w-6 h-6 transform group-hover:translate-x-0.5 transition-transform" />
           {nextTitle && (
             <span className="absolute right-14 bg-zinc-900 text-white text-xs px-2.5 py-1.5 rounded-lg shadow-xl border border-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap max-w-xs truncate pointer-events-none hidden sm:block">
-              {nextTitle}
+              {getSafeDisplayString(nextTitle)}
             </span>
           )}
         </button>
@@ -321,26 +339,30 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             {article.feedTitle && (
               <span className="font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
-                {article.feedTitle}
+                {getSafeDisplayString(article.feedTitle)}
               </span>
             )}
             {article.categories && article.categories.length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
-                {article.categories.map((cat, idx) => (
-                  <span
-                    key={idx}
-                    className="px-2 py-0.5 rounded bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium"
-                  >
-                    {cat}
-                  </span>
-                ))}
+                {article.categories.map((cat, idx) => {
+                  const label = getSafeDisplayString(cat);
+                  if (!label) return null;
+                  return (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 rounded bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-medium"
+                    >
+                      {label}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
 
           {/* Article Main Headline */}
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-950 dark:text-zinc-50 tracking-tight leading-tight">
-            {article.title}
+            {getSafeDisplayString(article.title) || 'Untitled'}
           </h1>
 
           {/* Article Meta row */}
@@ -348,13 +370,13 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
             {article.pubDate && (
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-zinc-400" />
-                {formatDate(article.pubDate)}
+                {formatDate(getSafeDisplayString(article.pubDate))}
               </span>
             )}
             {article.creator && (
               <span className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-zinc-400" />
-                {article.creator}
+                {getSafeDisplayString(article.creator)}
               </span>
             )}
             <a
