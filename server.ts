@@ -273,7 +273,7 @@ function cleanHtmlToSnippet(html?: string): string {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3009;
 
   app.use(express.json());
 

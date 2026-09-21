@@ -77,7 +77,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
    ```bash
    npm run dev
    ```
-   The app will be available at `http://localhost:3000`.
+   The app will be available at `http://localhost:3009`.
 
 ---
 
@@ -85,7 +85,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 
 | Command | Description |
 | :--- | :--- |
-| `npm run dev` | Starts the Express backend server with the Vite middleware in development mode (on port 3000) |
+| `npm run dev` | Starts the Express backend server with the Vite middleware in development mode (on port 3009) |
 | `npm run build` | Builds the frontend with Vite and bundles the TypeScript backend with esbuild into `dist/server.cjs` |
 | `npm start` | Runs the compiled production server |
 | `npm run lint` | Validates the TypeScript types (`tsc --noEmit`) |
@@ -98,7 +98,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 ### Via the URL
 Simply add the desired RSS feed as a URL parameter:
 ```text
-http://localhost:3000/?rss=https://nytimes.com
+http://localhost:3009/?rss=https://nytimes.com
 ```
 The reader fetches and displays the feed automatically. This works with any feed URL (RSS, Atom or RDF), for example `https://news.ycombinator.com/rss`.
 
@@ -110,7 +110,7 @@ The reader integrates seamlessly with the [RSS Subscription Extension](https://c
 3. Add a new reader with the following URL, where `%s` is automatically replaced by the current page's feed:
 
    ```text
-   http://localhost:3000/?rss=%s
+   http://localhost:3009/?rss=%s
    ```
 
    ![Manage subscription configuration](https://github.com/onigetoc/simple-rss-reader/blob/main/public/rss-sub.png?raw=true)

@@ -17,7 +17,7 @@ export const ChromeExtensionHelpModal: React.FC<ChromeExtensionHelpModalProps> =
 
   if (!isOpen) return null;
 
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3009';
   const urlPattern = `${currentOrigin}/?rss=\${encodeURIComponent(rssUrl)}`;
 
   const bookmarkletCode = `javascript:(function(){
