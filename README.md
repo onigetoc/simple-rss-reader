@@ -65,7 +65,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 1. **Clone the repository or open the directory**:
    ```bash
    git clone https://github.com/onigetoc/simple-rss-reader
-   cd <FOLDER_NAME>
+   cd simple-rss-reader
    ```
 
 2. **Install dependencies**:
