@@ -283,17 +283,27 @@ const CURL_UA = 'curl/8.9.1';
 const FEED_ACCEPT =
   'application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9';
 
+// Hosts that answered 403 to a browser UA (Cloudflare bot management). Remembering
+// them avoids sending a doomed request — and an extra Cloudflare challenge — on
+// every refresh, which is what previously tripped the IP rate limit (error 1015).
+const curlUaHosts = new Set<string>();
+
 async function fetchFeedText(url: string): Promise<string> {
+  const host = new URL(url).host;
+  const preferCurlUa = curlUaHosts.has(host);
+
   const request = (ua: string) =>
     fetch(url, {
       headers: { 'User-Agent': ua, Accept: FEED_ACCEPT },
       redirect: 'follow',
     });
 
-  let response = await request(BROWSER_UA);
-  if (response.status === 403) {
-    // Cloudflare-protected feed: retry once presenting as curl.
+  let response = await request(preferCurlUa ? CURL_UA : BROWSER_UA);
+  if (response.status === 403 && !preferCurlUa) {
+    // Cloudflare-protected feed: retry once presenting as curl, and remember the
+    // host so later fetches skip the browser UA entirely.
     response = await request(CURL_UA);
+    if (response.ok) curlUaHosts.add(host);
   }
 
   if (!response.ok) {
