@@ -37,6 +37,9 @@ interface CustomItem {
   id?: string;
 }
 
+// NOTE: feeds are fetched separately (see fetchFeedText) and only parseString is
+// used, so rss-parser's HTTP options (headers, timeout) are intentionally omitted —
+// they only apply to parseURL, which is never called.
 const parser = new Parser<CustomFeed, CustomItem>({
   customFields: {
     feed: ['image', 'description'],
@@ -52,13 +55,6 @@ const parser = new Parser<CustomFeed, CustomItem>({
       ['summary', 'summary'],
     ],
   },
-  headers: {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 RSS-Viewer/1.0',
-    Accept:
-      'application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*;q=0.8',
-  },
-  timeout: 15000,
 });
 
 function extractFirstImage(
@@ -272,6 +268,38 @@ function cleanHtmlToSnippet(html?: string): string {
     .slice(0, 320);
 }
 
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+// Some feeds (e.g. politico.com) sit behind Cloudflare bot management that
+// challenges a Node client pretending to be a browser (Chrome UA + Node's
+// OpenSSL TLS = inconsistent fingerprint). Presenting as curl matches Node's
+// OpenSSL TLS fingerprint, so the request passes the bot check.
+const CURL_UA = 'curl/8.9.1';
+const FEED_ACCEPT =
+  'application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9';
+
+async function fetchFeedText(url: string): Promise<string> {
+  const request = (ua: string) =>
+    fetch(url, {
+      headers: { 'User-Agent': ua, Accept: FEED_ACCEPT },
+      redirect: 'follow',
+    });
+
+  let response = await request(BROWSER_UA);
+  if (response.status === 403) {
+    // Cloudflare-protected feed: retry once presenting as curl.
+    response = await request(CURL_UA);
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch feed (HTTP status: ${response.status} ${response.statusText})`
+    );
+  }
+
+  return response.text();
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? Number(process.env.PORT) : 3008;
@@ -301,24 +329,7 @@ async function startServer() {
     }
 
     try {
-      // Fetch with node-fetch / native fetch first to get clean text with browser-like headers
-      const response = await fetch(targetUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 RSS-Viewer/1.0',
-          Accept:
-            'application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9',
-        },
-        redirect: 'follow',
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch feed (HTTP status: ${response.status} ${response.statusText})`
-        );
-      }
-
-      const xmlText = await response.text();
+      const xmlText = await fetchFeedText(targetUrl);
       const parsed = await parser.parseString(xmlText);
 
       const feedImageUrl =

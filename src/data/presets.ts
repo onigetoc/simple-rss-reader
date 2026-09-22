@@ -64,4 +64,25 @@ export const PRESET_FEEDS: PresetFeed[] = [
     url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCHnyfMqiRRG1u-2MsSQLbXA',
     description: 'Popular science, physics experiments, and educational video channel.',
   },
+  {
+    id: 'openai-youtube',
+    title: 'OpenAI (YouTube)',
+    category: 'AI & Video',
+    url: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCXZCJLdBC09xxGZ6gcdrc6A',
+    description: 'OpenAI official channel videos and announcements.',
+  },
+  {
+    id: 'google-news-ai-openai-youtube',
+    title: 'Google News - AI/OpenAI (YouTube)',
+    category: 'AI & Video',
+    url: 'https://news.google.com/rss/search?q=ai+openai+site:youtube.com',
+    description: 'Google News search feed for AI and OpenAI videos on YouTube.',
+  },
+  {
+    id: 'reddit-search-ai-openai',
+    title: 'Reddit Search - AI/OpenAI',
+    category: 'Community',
+    url: 'https://www.reddit.com/search.rss?q=ai+openai&sort=hot',
+    description: 'Hottest Reddit posts matching "ai openai".',
+  },
 ];

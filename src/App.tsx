@@ -40,6 +40,7 @@ import {
   isCacheEntryFresh,
   clearFeedsCache,
   getAllCachedItemsSorted,
+  isAbortError,
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
@@ -85,6 +86,8 @@ export default function App() {
   // Refs kept in sync so loadFeed can stay a stable callback without stale closures.
   const cachedFeedsRef = useRef<Record<string, CachedFeedEntry>>(cachedFeeds);
   const loadRequestRef = useRef<number>(0);
+  // Controller for the in-flight feed fetch so the user can stop a slow load.
+  const abortControllerRef = useRef<AbortController | null>(null);
   useEffect(() => {
     cachedFeedsRef.current = cachedFeeds;
   }, [cachedFeeds]);
@@ -147,6 +150,11 @@ export default function App() {
       if (!urlToLoad || !urlToLoad.trim()) return;
 
       const trimmed = urlToLoad.trim();
+
+      // Cancel any previous in-flight request before starting a new one.
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+
       const requestId = ++loadRequestRef.current;
 
       setError(null);
@@ -186,8 +194,11 @@ export default function App() {
         setIsLoading(true);
       }
 
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       try {
-        const result: FeedResponse = await fetchFeed(trimmed);
+        const result: FeedResponse = await fetchFeed(trimmed, controller.signal);
 
         // Ignore responses from an outdated navigation.
         if (requestId !== loadRequestRef.current) return;
@@ -206,8 +217,9 @@ export default function App() {
           document.title = `${result.metadata.title} - RSS Viewer`;
         }
       } catch (err: any) {
-        // Ignore errors from an outdated navigation.
+        // Ignore errors from an outdated navigation or a user-triggered stop.
         if (requestId !== loadRequestRef.current) return;
+        if (isAbortError(err)) return;
 
         console.error('Error in loadFeed:', err);
         // If we already have a (stale) cached copy, keep it instead of wiping the view.
@@ -222,11 +234,23 @@ export default function App() {
       } finally {
         if (requestId === loadRequestRef.current) {
           setIsLoading(false);
+          if (abortControllerRef.current === controller) {
+            abortControllerRef.current = null;
+          }
         }
       }
     },
     []
   );
+
+  // Stop a feed that is taking too long to load.
+  const handleStopLoading = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    // Invalidate the in-flight request so its callbacks don't touch the state.
+    loadRequestRef.current++;
+    setIsLoading(false);
+  }, []);
 
   // Load a specific feed (URL input, loaded feeds, history, samples) and always
   // return to the single "Feed" view so the freshly loaded feed is displayed,
@@ -526,6 +550,7 @@ export default function App() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
+        onStop={handleStopLoading}
         searchTerm={searchTerm}
         onSearchChange={(val) => {
           setSearchTerm(val);
@@ -564,6 +589,7 @@ export default function App() {
             theme={theme}
             onToggleTheme={toggleTheme}
             onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
+            onStop={handleStopLoading}
             searchTerm={searchTerm}
             onSearchChange={(val) => {
               setSearchTerm(val);

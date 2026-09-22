@@ -68,7 +68,12 @@ export function sanitizeFeedItem(item: any): FeedItem {
   };
 }
 
-export async function fetchFeed(url: string): Promise<FeedResponse> {
+/** True when an error comes from an aborted fetch (user pressed Stop). */
+export function isAbortError(err: any): boolean {
+  return err?.name === 'AbortError' || err?.code === 'ABORT_ERR';
+}
+
+export async function fetchFeed(url: string, signal?: AbortSignal): Promise<FeedResponse> {
   const trimmed = url.trim();
   if (!trimmed) {
     throw new Error("Please enter a valid RSS feed URL.");
@@ -76,7 +81,7 @@ export async function fetchFeed(url: string): Promise<FeedResponse> {
 
   // 1. Primary: Try our backend Express API
   try {
-    const res = await fetch(`/api/rss?url=${encodeURIComponent(trimmed)}`);
+    const res = await fetch(`/api/rss?url=${encodeURIComponent(trimmed)}`, { signal });
     if (res.ok) {
       const data = await res.json();
       const sanitizedItems = (data.items || []).map(sanitizeFeedItem);
@@ -96,12 +101,15 @@ export async function fetchFeed(url: string): Promise<FeedResponse> {
       throw new Error(errData.error || `Server HTTP Error ${res.status}`);
     }
   } catch (backendError: any) {
+    // The user pressed Stop: don't fall back to the proxy, just propagate.
+    if (isAbortError(backendError)) throw backendError;
+
     console.warn('Backend /api/rss failed, trying client CORS proxy fallback:', backendError);
 
     // 2. Fallback: allorigins or corsproxy for static resilience
     try {
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(trimmed)}`;
-      const proxyRes = await fetch(proxyUrl);
+      const proxyRes = await fetch(proxyUrl, { signal });
       if (!proxyRes.ok) {
         throw new Error(`Failed to retrieve feed via proxy (HTTP ${proxyRes.status})`);
       }
@@ -200,6 +208,7 @@ export async function fetchFeed(url: string): Promise<FeedResponse> {
         items,
       };
     } catch (fallbackError: any) {
+      if (isAbortError(fallbackError)) throw fallbackError;
       throw new Error(
         backendError.message || fallbackError.message || "Unable to load this RSS feed."
       );

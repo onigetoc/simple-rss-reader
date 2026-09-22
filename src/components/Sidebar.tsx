@@ -7,6 +7,7 @@ import {
   Sparkles,
   ArrowRight,
   RefreshCw,
+  Square,
   Trash2,
   Globe,
   Sun,
@@ -37,6 +38,7 @@ interface SidebarProps {
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onRefresh: () => void;
+  onStop: () => void;
   searchTerm: string;
   onSearchChange: (term: string) => void;
   onOpenChromeHelp: () => void;
@@ -63,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   theme,
   onToggleTheme,
   onRefresh,
+  onStop,
   searchTerm,
   onSearchChange,
   onOpenChromeHelp,
@@ -198,16 +201,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading || !currentUrl.trim()}
-            className="flex-shrink-0 p-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-700/60 transition-colors cursor-pointer disabled:opacity-50"
-            title="Refresh feed from source"
-            aria-label="Refresh feed from source"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex-shrink-0 p-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 transition-colors cursor-pointer"
+              title="Stop loading"
+              aria-label="Stop loading"
+            >
+              <Square className="w-4 h-4" fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={!currentUrl.trim()}
+              className="flex-shrink-0 p-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-700/60 transition-colors cursor-pointer disabled:opacity-50"
+              title="Refresh feed from source"
+              aria-label="Refresh feed from source"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          )}
         </form>
       </div>
 
