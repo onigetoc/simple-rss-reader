@@ -1,4 +1,5 @@
 import { FeedItem, FeedMetadata, FeedResponse } from '../types';
+import { isLikelyTrackingImage } from '../utils/imageFilter';
 
 const STORAGE_FAVORITES_KEY = 'rss_viewer_favorites_v1';
 const STORAGE_HISTORY_KEY = 'rss_viewer_history_v1';
@@ -65,6 +66,11 @@ export function sanitizeFeedItem(item: any): FeedItem {
     categories: toSafeStringArray(item.categories),
     feedTitle: toSafeString(item.feedTitle),
     feedUrl: toSafeString(item.feedUrl),
+    // Drop tracking pixels / spacers that some feeds expose as the item image.
+    imageUrl: (() => {
+      const raw = toSafeString(item.imageUrl) || undefined;
+      return raw && !isLikelyTrackingImage(raw) ? raw : undefined;
+    })(),
   };
 }
 
@@ -165,14 +171,25 @@ export async function fetchFeed(url: string, signal?: AbortSignal): Promise<Feed
         const mediaUrl = mediaContent?.getAttribute('url');
 
         let imageUrl = '';
-        if (enclosureType.startsWith('image/') || /\.(jpe?g|png|webp|gif)/i.test(enclosureUrl)) {
+        const acceptImage = (u?: string | null): u is string =>
+          Boolean(u) && !isLikelyTrackingImage(u);
+
+        if (
+          acceptImage(enclosureUrl) &&
+          (enclosureType.startsWith('image/') || /\.(jpe?g|png|webp|gif)/i.test(enclosureUrl))
+        ) {
           imageUrl = enclosureUrl;
-        } else if (mediaUrl) {
+        } else if (acceptImage(mediaUrl)) {
           imageUrl = mediaUrl;
         } else {
-          const imgMatch = (content || description).match(/<img[^>]+src=["'](https?:\/\/[^"'\s>]+)["']/i);
-          if (imgMatch && imgMatch[1]) {
-            imageUrl = imgMatch[1];
+          // Keep scanning for the first real image, skipping tracking pixels.
+          const imgRegex = /<img[^>]+src=["'](https?:\/\/[^"'\s>]+)["']/gi;
+          let imgMatch: RegExpExecArray | null;
+          while ((imgMatch = imgRegex.exec(content || description)) !== null) {
+            if (acceptImage(imgMatch[1])) {
+              imageUrl = imgMatch[1];
+              break;
+            }
           }
         }
 

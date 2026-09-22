@@ -4,6 +4,7 @@ import http from 'http';
 import { fileURLToPath } from 'url';
 import Parser from 'rss-parser';
 import { createServer as createViteServer } from 'vite';
+import { isLikelyTrackingImage } from './src/utils/imageFilter';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +65,7 @@ function extractFirstImage(
   // 1. Direct enclosure image
   if (
     item.enclosure?.url &&
+    !isLikelyTrackingImage(item.enclosure.url) &&
     (item.enclosure.type?.startsWith('image/') ||
       /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(item.enclosure.url))
   ) {
@@ -75,25 +77,33 @@ function extractFirstImage(
     for (const m of item.mediaContent) {
       const url = m?.$?.url || m?.url;
       const medium = m?.$?.medium || m?.medium;
-      if (url && (medium === 'image' || /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(url))) {
+      if (
+        url &&
+        !isLikelyTrackingImage(url) &&
+        (medium === 'image' || /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(url))
+      ) {
         return url;
       }
     }
   } else if (item.mediaContent) {
     const url = item.mediaContent?.$?.url || item.mediaContent?.url;
-    if (url) return url;
+    if (url && !isLikelyTrackingImage(url)) return url;
   }
 
   // 3. Media thumbnail
   if (Array.isArray(item.mediaThumbnail) && item.mediaThumbnail.length > 0) {
-    const thumb = item.mediaThumbnail[0]?.$?.url || item.mediaThumbnail[0]?.url;
-    if (thumb) return thumb;
+    for (const t of item.mediaThumbnail) {
+      const thumb = t?.$?.url || t?.url;
+      if (thumb && !isLikelyTrackingImage(thumb)) return thumb;
+    }
   } else if (item.mediaThumbnail) {
     const thumb = item.mediaThumbnail?.$?.url || item.mediaThumbnail?.url;
-    if (thumb) return thumb;
+    if (thumb && !isLikelyTrackingImage(thumb)) return thumb;
   }
 
-  // 4. Regex extraction from content or description
+  // 4. Regex extraction from content or description.
+  // Scan every <img> and keep the first one that isn't a tracking pixel,
+  // so a feed can still expose a real image after an analytics pixel.
   const contentToSearch = [
     item.contentEncoded,
     item.content,
@@ -104,22 +114,14 @@ function extractFirstImage(
     .join(' ');
 
   if (contentToSearch) {
-    // Check standard src
-    const imgMatch = contentToSearch.match(
-      /<img[^>]+src=["'](https?:\/\/[^"'\s>]+)["']/i
-    );
-    if (imgMatch && imgMatch[1]) {
-      if (!imgMatch[1].includes('feedburner') && !imgMatch[1].includes('/1x1.') && !imgMatch[1].includes('doubleclick')) {
-        return imgMatch[1];
+    const imgRegex =
+      /<img[^>]+(?:src|data-src)=["'](https?:\/\/[^"'\s>]+)["']/gi;
+    let match: RegExpExecArray | null;
+    while ((match = imgRegex.exec(contentToSearch)) !== null) {
+      const candidate = match[1];
+      if (candidate && !isLikelyTrackingImage(candidate)) {
+        return candidate;
       }
-    }
-
-    // Check data-src or srcset
-    const dataSrcMatch = contentToSearch.match(
-      /<img[^>]+data-src=["'](https?:\/\/[^"'\s>]+)["']/i
-    );
-    if (dataSrcMatch && dataSrcMatch[1]) {
-      return dataSrcMatch[1];
     }
   }
 

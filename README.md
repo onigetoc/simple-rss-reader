@@ -22,6 +22,8 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 - **Loaded Feeds list**: Shows every feed currently held in memory with its article count and cache age. A search box filters the list, and hovering a feed reveals a **✕** to remove it from memory and `localStorage`; **Clear Memory** empties the whole cache.
 - **Per-feed filter & bulk refresh**: A searchable combo box filters the aggregated list down to a single feed (type to find a feed by title or URL), and **Refresh all** re-fetches every in-memory feed from its source at once.
 
+> 💡 **Tip — search across everything:** When **ALL Feeds** is showing every in-memory feed, the search bar queries the **entire combined list at once** — every article from every loaded feed, merged and deduplicated. This makes it great for precise research: even very specific or unexpected keywords can surface matching articles across all your sources. Keep in mind this cross-feed search only covers feeds currently in memory, so load (or **Refresh all**) the feeds you want to search through first.
+
 ### ⚡ Smart 30-minute cache
 - **Per-feed cache**: Every feed you load (metadata + articles) is stored in `localStorage`, keyed by its URL, so it survives page reloads.
 - **30-minute freshness window**: Re-opening a feed within 30 minutes is instant — no network request and no loading flash.

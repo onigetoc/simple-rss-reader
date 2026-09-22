@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ExternalLink,
   Bookmark,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
+import { isImageTooSmall, isLikelyTrackingImage } from '../utils/imageFilter';
 
 interface FeedItemCardProps {
   item: FeedItem;
@@ -30,7 +31,6 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
   viewMode = 'cards',
 }) => {
   const [copied, setCopied] = useState(false);
-  const [imageError, setImageError] = useState(false);
 
   // Detect YouTube ID and thumbnails
   const ytVideoId =
@@ -41,9 +41,44 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
   const ytThumbBig = ytVideoId ? Youtube.thumb(ytVideoId, 'big') : null;
   const ytThumbSmall = ytVideoId ? Youtube.thumb(ytVideoId, 'small') : null;
 
-  // Effective images (prioritize feed image if valid, or YouTube thumbnail)
-  const effectiveImageUrl = !imageError && item.imageUrl ? item.imageUrl : ytThumbBig;
-  const compactImageUrl = !imageError && item.imageUrl ? item.imageUrl : ytThumbSmall || ytThumbBig;
+  // Skip image URLs that are obviously tracking pixels / spacers.
+  const feedImageCandidate =
+    item.imageUrl && !isLikelyTrackingImage(item.imageUrl) ? item.imageUrl : undefined;
+
+  // Measure the real image once the browser decodes it: a 1x1 tracking pixel
+  // must never be stretched into a big black box. 'pending' until then.
+  const [feedImageStatus, setFeedImageStatus] = useState<'pending' | 'ok' | 'bad'>(
+    feedImageCandidate ? 'pending' : 'bad'
+  );
+
+  // Re-validate when the item's image URL changes (e.g. feed refresh in place).
+  useEffect(() => {
+    setFeedImageStatus(feedImageCandidate ? 'pending' : 'bad');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.imageUrl]);
+
+  // Effective images (prioritize a validated feed image, or YouTube thumbnail)
+  const validFeedImage = feedImageStatus === 'ok' ? feedImageCandidate : undefined;
+  const effectiveImageUrl = validFeedImage || ytThumbBig;
+  const compactImageUrl = validFeedImage || ytThumbSmall || ytThumbBig;
+
+  // Invisible probe that loads the candidate image off-screen so its natural
+  // dimensions can be checked without ever showing a stretched placeholder.
+  const imageProbe =
+    feedImageStatus === 'pending' && feedImageCandidate ? (
+      <img
+        src={feedImageCandidate}
+        alt=""
+        aria-hidden="true"
+        referrerPolicy="no-referrer"
+        onLoad={(e) => {
+          const { naturalWidth, naturalHeight } = e.currentTarget;
+          setFeedImageStatus(isImageTooSmall(naturalWidth, naturalHeight) ? 'bad' : 'ok');
+        }}
+        onError={() => setFeedImageStatus('bad')}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+      />
+    ) : null;
 
   const handleCopyLink = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -100,13 +135,14 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
         onClick={() => onSelectArticle(item)}
         className="group relative flex items-center justify-between gap-4 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-amber-500/40 dark:hover:border-amber-500/40 transition-all cursor-pointer"
       >
+        {imageProbe}
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          {compactImageUrl && !imageError && (
+          {compactImageUrl && (
             <div className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-100 dark:bg-zinc-800">
               <img
                 src={compactImageUrl}
                 alt=""
-                onError={() => setImageError(true)}
+                onError={() => setFeedImageStatus('bad')}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
                 loading="lazy"
@@ -184,15 +220,16 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
     <article
       id={`article-${item.id}`}
       onClick={() => onSelectArticle(item)}
-      className="group rounded-2xl border border-zinc-200/90 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/80 shadow-xs hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-500/30 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer"
+      className="group relative rounded-2xl border border-zinc-200/90 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/80 shadow-xs hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-500/30 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer"
     >
+      {imageProbe}
       {/* Media Header: Image or YouTube Thumbnail */}
-      {effectiveImageUrl && !imageError ? (
+      {effectiveImageUrl ? (
         <div className="relative w-full aspect-16/9 overflow-hidden bg-zinc-900">
           <img
             src={effectiveImageUrl}
             alt={item.title}
-            onError={() => setImageError(true)}
+            onError={() => setFeedImageStatus('bad')}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             referrerPolicy="no-referrer"
             loading="lazy"

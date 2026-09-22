@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
+import { isImageTooSmall, isLikelyTrackingImage } from '../utils/imageFilter';
 import {
   ArticleFontSize,
   getStoredFontSize,
@@ -149,6 +150,21 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
     (article.imageUrl.includes('img.youtube.com') ||
       article.imageUrl.includes('ytimg.com') ||
       Boolean(ytVideoId));
+
+  // Reject tracking-pixel hero images (e.g. a 1x1 analytics pixel stretched full width).
+  const [heroImageOk, setHeroImageOk] = useState(true);
+  useEffect(() => {
+    setHeroImageOk(
+      Boolean(article.imageUrl) && !isLikelyTrackingImage(article.imageUrl)
+    );
+  }, [article.id, article.imageUrl]);
+
+  const handleHeroImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    if (isImageTooSmall(naturalWidth, naturalHeight)) {
+      setHeroImageOk(false);
+    }
+  };
 
   // Handle keyboard shortcuts (ArrowLeft, ArrowRight, Escape)
   useEffect(() => {
@@ -391,11 +407,13 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           </div>
 
           {/* Hero Image if available (and not redundant with video player) */}
-          {article.imageUrl && (!effectiveVideoUrl || !isYoutubeThumbnail) && (
+          {article.imageUrl && heroImageOk && (!effectiveVideoUrl || !isYoutubeThumbnail) && (
             <div className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900">
               <img
                 src={article.imageUrl}
                 alt={article.title}
+                onLoad={handleHeroImageLoad}
+                onError={() => setHeroImageOk(false)}
                 className="w-full max-h-[500px] object-cover"
                 referrerPolicy="no-referrer"
               />
