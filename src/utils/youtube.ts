@@ -12,38 +12,43 @@ export const Youtube = {
     if (!url) return null;
     const trimmed = url.trim();
 
+    // A YouTube video ID is always exactly 11 URL-safe characters. Capturing a
+    // bounded ID (instead of `[^&#?]+`) prevents grabbing surrounding HTML when
+    // the link is embedded in markup, e.g. `<a href=".../embed/ID"><strong>...`.
+    const ID = '([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])';
+
     // 1. URL with ?v= or &v= parameter (e.g. https://www.youtube.com/watch?v=F4rBAf1wbq4)
-    const vMatch = trimmed.match(/[?&]v=([^&#]*)/);
+    const vMatch = trimmed.match(new RegExp('[?&]v=' + ID));
     if (vMatch && vMatch[1]) {
       return vMatch[1];
     }
 
     // 2. YouTube Shorts (e.g. https://www.youtube.com/shorts/F4rBAf1wbq4)
-    const shortsMatch = trimmed.match(/youtube\.com\/shorts\/([^&#?]+)/);
+    const shortsMatch = trimmed.match(new RegExp('youtube\\.com/shorts/' + ID));
     if (shortsMatch && shortsMatch[1]) {
       return shortsMatch[1];
     }
 
     // 3. Short URL (e.g. https://youtu.be/F4rBAf1wbq4)
-    const shortMatch = trimmed.match(/youtu\.be\/([^&#?]+)/);
+    const shortMatch = trimmed.match(new RegExp('youtu\\.be/' + ID));
     if (shortMatch && shortMatch[1]) {
       return shortMatch[1];
     }
 
     // 4. Atom feed yt:video:ID (e.g. yt:video:F4rBAf1wbq4)
-    const atomMatch = trimmed.match(/yt:video:([\w-]{11})/i);
+    const atomMatch = trimmed.match(/yt:video:([\w-]{11})(?![A-Za-z0-9_-])/i);
     if (atomMatch && atomMatch[1]) {
       return atomMatch[1];
     }
 
     // 5. Embed URL (e.g. https://www.youtube.com/embed/F4rBAf1wbq4)
-    const embedMatch = trimmed.match(/youtube\.com\/embed\/([^&#?]+)/);
+    const embedMatch = trimmed.match(new RegExp('youtube\\.com/embed/' + ID));
     if (embedMatch && embedMatch[1]) {
       return embedMatch[1];
     }
 
     // 6. Path URL (e.g. https://www.youtube.com/v/F4rBAf1wbq4)
-    const vPathMatch = trimmed.match(/youtube\.com\/v\/([^&#?]+)/);
+    const vPathMatch = trimmed.match(new RegExp('youtube\\.com/v/' + ID));
     if (vPathMatch && vPathMatch[1]) {
       return vPathMatch[1];
     }

@@ -281,6 +281,15 @@ export default function App() {
     }
   }, [cachedFeeds, allFeedsFilter]);
 
+  // The per-feed filter is meant to be a temporary view: reset it as soon as the
+  // user leaves ALL Feeds, so re-entering always shows every feed again. This
+  // prevents the "stuck on a single feed" trap.
+  useEffect(() => {
+    if (activeTab !== 'all-feeds') {
+      setAllFeedsFilter('all');
+    }
+  }, [activeTab]);
+
   // Preload several sample feeds into memory
   const handlePreloadSamples = useCallback(async () => {
     setIsLoading(true);
@@ -545,6 +554,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
+          if (tab === 'all-feeds') setAllFeedsFilter('all');
           setSelectedArticleId(null);
         }}
         theme={theme}
@@ -584,6 +594,7 @@ export default function App() {
             activeTab={activeTab}
             setActiveTab={(tab) => {
               setActiveTab(tab);
+              if (tab === 'all-feeds') setAllFeedsFilter('all');
               setSelectedArticleId(null);
             }}
             theme={theme}
@@ -732,6 +743,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      // Entering ALL Feeds always starts from the full list.
+                      setAllFeedsFilter('all');
                       setActiveTab((prev) => (prev === 'all-feeds' ? 'feed' : 'all-feeds'));
                       setSelectedArticleId(null);
                     }}

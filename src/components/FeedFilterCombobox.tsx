@@ -69,25 +69,43 @@ export const FeedFilterCombobox: React.FC<FeedFilterComboboxProps> = ({
 
   return (
     <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setIsOpen((open) => !open)}
-        className="flex items-center gap-1.5 max-w-[220px] text-[11px] font-semibold pl-2.5 pr-2 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-500/30 text-zinc-700 dark:text-zinc-200 hover:border-amber-500/60 focus:outline-hidden focus:ring-1 focus:ring-amber-500 transition-colors cursor-pointer"
-        title="Filter aggregated articles by feed"
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-      >
-        <Newspaper className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-        <span className="truncate">{selectedLabel}</span>
-        {value === 'all' && (
-          <span className="text-[10px] px-1.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-bold flex-shrink-0">
-            {feeds.length}
-          </span>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setIsOpen((open) => !open)}
+          className="flex items-center gap-1.5 max-w-[220px] text-[11px] font-semibold pl-2.5 pr-2 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-500/30 text-zinc-700 dark:text-zinc-200 hover:border-amber-500/60 focus:outline-hidden focus:ring-1 focus:ring-amber-500 transition-colors cursor-pointer"
+          title="Filter aggregated articles by feed"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+        >
+          <Newspaper className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <span className="truncate">{selectedLabel}</span>
+          {value === 'all' && (
+            <span className="text-[10px] px-1.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-bold flex-shrink-0">
+              {feeds.length}
+            </span>
+          )}
+          <ChevronDown
+            className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {/* One-click escape from a single-feed filter. */}
+        {value !== 'all' && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange('all');
+              setIsOpen(false);
+            }}
+            className="flex-shrink-0 p-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-500/30 text-zinc-500 dark:text-zinc-400 hover:text-red-500 hover:border-red-500/50 transition-colors cursor-pointer"
+            title="Clear feed filter (show all feeds)"
+            aria-label="Clear feed filter (show all feeds)"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         )}
-        <ChevronDown
-          className={`w-3.5 h-3.5 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
+      </div>
 
       {isOpen && (
         <div className="absolute right-0 top-full mt-1.5 z-50 w-72 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl overflow-hidden">
@@ -118,26 +136,26 @@ export const FeedFilterCombobox: React.FC<FeedFilterComboboxProps> = ({
 
           {/* Options */}
           <div className="max-h-64 overflow-y-auto py-1" role="listbox">
-            {!normalizedQuery && (
-              <button
-                type="button"
-                onClick={() => handleSelect('all')}
-                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors cursor-pointer ${
-                  value === 'all'
-                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 font-semibold'
-                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <span className="flex items-center gap-2 min-w-0">
-                  <Newspaper className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                  <span className="truncate">All feeds</span>
-                </span>
-                <span className="flex items-center gap-1.5 flex-shrink-0">
-                  <span className="text-[10px] text-zinc-400">{feeds.length}</span>
-                  {value === 'all' && <Check className="w-3.5 h-3.5" />}
-                </span>
-              </button>
-            )}
+            {/* Always available, even while typing a search, so the user can
+                never get stuck inside a single-feed filter. */}
+            <button
+              type="button"
+              onClick={() => handleSelect('all')}
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors cursor-pointer border-b border-zinc-100 dark:border-zinc-800 ${
+                value === 'all'
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 font-semibold'
+                  : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <Newspaper className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                <span className="truncate">All feeds</span>
+              </span>
+              <span className="flex items-center gap-1.5 flex-shrink-0">
+                <span className="text-[10px] text-zinc-400">{feeds.length}</span>
+                {value === 'all' && <Check className="w-3.5 h-3.5" />}
+              </span>
+            </button>
 
             {filteredFeeds.length === 0 ? (
               <p className="px-3 py-4 text-center text-[11px] text-zinc-500">

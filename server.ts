@@ -139,17 +139,20 @@ function extractFirstImage(
 
 function extractYouTubeVideoId(str?: string | null): string | null {
   if (!str) return null;
-  const vMatch = str.match(/[?&]v=([^&#]*)/);
+  // Video IDs are always exactly 11 URL-safe chars; a bounded capture avoids
+  // swallowing surrounding HTML when the link sits inside markup.
+  const ID = '([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])';
+  const vMatch = str.match(new RegExp('[?&]v=' + ID));
   if (vMatch && vMatch[1]) return vMatch[1];
-  const shortsMatch = str.match(/youtube\.com\/shorts\/([^&#?]+)/);
+  const shortsMatch = str.match(new RegExp('youtube\\.com/shorts/' + ID));
   if (shortsMatch && shortsMatch[1]) return shortsMatch[1];
-  const shortMatch = str.match(/youtu\.be\/([^&#?]+)/);
+  const shortMatch = str.match(new RegExp('youtu\\.be/' + ID));
   if (shortMatch && shortMatch[1]) return shortMatch[1];
-  const atomMatch = str.match(/yt:video:([\w-]{11})/i);
+  const atomMatch = str.match(/yt:video:([\w-]{11})(?![A-Za-z0-9_-])/i);
   if (atomMatch && atomMatch[1]) return atomMatch[1];
-  const embedMatch = str.match(/youtube\.com\/embed\/([^&#?]+)/);
+  const embedMatch = str.match(new RegExp('youtube\\.com/embed/' + ID));
   if (embedMatch && embedMatch[1]) return embedMatch[1];
-  const vPathMatch = str.match(/youtube\.com\/v\/([^&#?]+)/);
+  const vPathMatch = str.match(new RegExp('youtube\\.com/v/' + ID));
   if (vPathMatch && vPathMatch[1]) return vPathMatch[1];
   return null;
 }
