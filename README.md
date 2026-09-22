@@ -132,6 +132,17 @@ Once configured, just click the extension icon while visiting a site to open its
 
 ---
 
+## 🧹 Rejecting tracking-pixel images
+
+Some feeds expose a 1×1 analytics/tracking pixel as the item's image (for example NPR's `npr-rss-pixel.png`). Stretched into the card layout it would render as a big, ugly black box, so these images are rejected instead of displayed:
+
+- **URL heuristic** (server + client): URLs that look like tracking pixels/spacers (`pixel.png`, `1x1.gif`, `spacer`, `blank`, `transparent`, `beacon`, feedburner/doubleclick hosts…) are skipped before being requested.
+- **Real-size check** (browser): the image is measured via `naturalWidth` / `naturalHeight` on load; anything smaller than **64 px** on either side is dropped. The browser already downloaded the image to display it, so this costs nothing extra.
+
+When a feed image is rejected, the card simply falls back to the YouTube thumbnail (if any) or to a text-only layout — never a stretched pixel. The threshold lives in `MIN_IMAGE_DIMENSION` in `src/utils/imageFilter.ts`.
+
+---
+
 ## 📄 License
 
 This project is released under a free license. See the source code for more details.
