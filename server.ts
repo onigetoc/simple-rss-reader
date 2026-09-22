@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import http from 'http';
 import { fileURLToPath } from 'url';
 import Parser from 'rss-parser';
 import { createServer as createViteServer } from 'vite';
@@ -273,7 +274,7 @@ function cleanHtmlToSnippet(html?: string): string {
 
 async function startServer() {
   const app = express();
-  const PORT = 3008;
+  const PORT = process.env.PORT ? Number(process.env.PORT) : 3008;
 
   app.use(express.json());
 
@@ -404,22 +405,33 @@ async function startServer() {
 
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {
+    // Create the HTTP server first so Vite can attach its HMR WebSocket to it.
+    // Sharing the same port (3008) avoids clashing with other Vite dev servers
+    // that use Vite's default standalone HMR port (24678).
+    const httpServer = http.createServer(app);
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
+
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
-  }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+  }
 }
 
 startServer();

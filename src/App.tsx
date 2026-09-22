@@ -45,6 +45,7 @@ import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
 import { ArticleReaderView } from './components/ArticleReaderView';
 import { ChromeExtensionHelpModal } from './components/ChromeExtensionHelpModal';
+import { FeedFilterCombobox } from './components/FeedFilterCombobox';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Number of articles to display at a time
@@ -225,6 +226,18 @@ export default function App() {
       }
     },
     []
+  );
+
+  // Load a specific feed (URL input, loaded feeds, history, samples) and always
+  // return to the single "Feed" view so the freshly loaded feed is displayed,
+  // even if the user was browsing ALL Feeds, Favorites, History, etc.
+  const handleSelectFeed = useCallback(
+    (url: string) => {
+      setActiveTab('feed');
+      setSelectedArticleId(null);
+      loadFeed(url, true);
+    },
+    [loadFeed]
   );
 
   // All items currently cached in memory, merged and sorted by date (newest first)
@@ -498,12 +511,12 @@ export default function App() {
       <Sidebar
         currentUrl={inputUrl}
         onUrlChange={setInputUrl}
-        onSubmitUrl={(url) => loadFeed(url, true)}
+        onSubmitUrl={handleSelectFeed}
         isLoading={isLoading}
         metadata={metadata}
         favorites={favorites}
         history={history}
-        onSelectFeed={(url) => loadFeed(url, true)}
+        onSelectFeed={handleSelectFeed}
         onRemoveHistory={handleRemoveHistory}
         activeTab={activeTab}
         setActiveTab={(tab) => {
@@ -536,12 +549,12 @@ export default function App() {
           <Sidebar
             currentUrl={inputUrl}
             onUrlChange={setInputUrl}
-            onSubmitUrl={(url) => loadFeed(url, true)}
+            onSubmitUrl={handleSelectFeed}
             isLoading={isLoading}
             metadata={metadata}
             favorites={favorites}
             history={history}
-            onSelectFeed={(url) => loadFeed(url, true)}
+            onSelectFeed={handleSelectFeed}
             onRemoveHistory={handleRemoveHistory}
             activeTab={activeTab}
             setActiveTab={(tab) => {
@@ -974,25 +987,17 @@ export default function App() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                      <select
+                      <FeedFilterCombobox
+                        feeds={Object.values(cachedFeeds)}
                         value={allFeedsFilter}
-                        onChange={(e) => setAllFeedsFilter(e.target.value)}
-                        className="max-w-[200px] text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-500/30 text-zinc-700 dark:text-zinc-200 focus:outline-hidden focus:ring-1 focus:ring-amber-500 cursor-pointer"
-                        title="Show the articles of a single feed"
-                      >
-                        <option value="all">All feeds ({Object.keys(cachedFeeds).length})</option>
-                        {Object.values(cachedFeeds).map((f) => (
-                          <option key={f.url} value={f.url}>
-                            {f.metadata?.title || f.url}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setAllFeedsFilter}
+                      />
 
                       <button
                         type="button"
                         onClick={handleRefreshAllFeeds}
                         disabled={isRefreshingAll}
-                        className="inline-flex items-center justify-center p-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed text-zinc-950 transition-colors cursor-pointer"
+                        className="inline-flex items-center justify-center p-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed text-zinc-950 transition-colors cursor-pointer"
                         title="Refresh all feeds from source"
                         aria-label="Refresh all feeds from source"
                       >

@@ -14,11 +14,15 @@ export const ChromeExtensionHelpModal: React.FC<ChromeExtensionHelpModalProps> =
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedCurrentFeed, setCopiedCurrentFeed] = useState(false);
 
   if (!isOpen) return null;
 
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3008';
-  const urlPattern = `${currentOrigin}/?rss=\${encodeURIComponent(rssUrl)}`;
+  const exampleFeedUrl = 'https://www.theverge.com/rss/index.xml';
+  // Displayed and copied as a normal, readable URL (no %3A / %2F encoding).
+  const currentFeedExtensionUrl = `${currentOrigin}/?rss=${currentFeedUrl || exampleFeedUrl}`;
+  const exampleExtensionUrl = `${currentOrigin}/?rss=${exampleFeedUrl}`;
 
   const bookmarkletCode = `javascript:(function(){
   var link = document.querySelector('link[type="application/rss+xml"], link[type="application/atom+xml"]');
@@ -61,10 +65,10 @@ chrome.action.onClicked.addListener((tab) => {
             </div>
             <div>
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                Chrome Extension & URL Integration
+                Help & Browser Integration
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Connect RSS Viewer directly with browser extensions and bookmarks
+                ?rss= URL, bookmarklet and Chrome extension setup
               </p>
             </div>
           </div>
@@ -79,6 +83,47 @@ chrome.action.onClicked.addListener((tab) => {
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-sm text-zinc-700 dark:text-zinc-300">
+          {/* Suggested Chrome extension (top callout) */}
+          <a
+            href="https://chromewebstore.google.com/detail/rss-subscription-extensio/nlbjncdgjeocebhnmkbbbdekmmmcbfjd"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 hover:bg-amber-500/15 transition-colors"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+              <Chrome className="w-4 h-4 flex-shrink-0" />
+              Suggested extension: RSS Subscription Extension
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400 flex-shrink-0">
+              Install
+              <ExternalLink className="w-3.5 h-3.5" />
+            </span>
+          </a>
+
+          {/* Section 0: Chrome Extension URL for the current feed */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Chrome Extension URL (current feed)
+            </h3>
+            <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+              Paste this URL into your RSS browser extension / subscription tool to open the feed you are
+              currently viewing:
+            </p>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/10 dark:bg-zinc-950 font-mono text-xs border border-amber-500/25 dark:border-zinc-800">
+              <span className="text-amber-700 dark:text-amber-400 truncate mr-2">
+                {currentFeedExtensionUrl}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleCopyCode(currentFeedExtensionUrl, setCopiedCurrentFeed)}
+                className="flex items-center gap-1 text-xs font-sans font-semibold text-zinc-600 dark:text-zinc-300 hover:text-amber-500 flex-shrink-0"
+              >
+                {copiedCurrentFeed ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCurrentFeed ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Section 1: URL Parameter */}
           <div className="space-y-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
@@ -89,11 +134,11 @@ chrome.action.onClicked.addListener((tab) => {
             </p>
             <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-100 dark:bg-zinc-950 font-mono text-xs border border-zinc-200 dark:border-zinc-800">
               <span className="text-amber-600 dark:text-amber-400 truncate mr-2">
-                {urlPattern}
+                {exampleExtensionUrl}
               </span>
               <button
                 type="button"
-                onClick={() => handleCopyCode(`${currentOrigin}/?rss=https://news.ycombinator.com/rss`, setCopiedUrl)}
+                onClick={() => handleCopyCode(exampleExtensionUrl, setCopiedUrl)}
                 className="flex items-center gap-1 text-xs font-sans font-semibold text-zinc-600 dark:text-zinc-300 hover:text-amber-500 flex-shrink-0"
               >
                 {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}

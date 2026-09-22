@@ -8,12 +8,11 @@ import {
   ArrowRight,
   RefreshCw,
   Trash2,
-  Copy,
-  Check,
   Globe,
   Sun,
   Moon,
   Info,
+  HelpCircle,
   X,
   Layers,
   Newspaper,
@@ -74,9 +73,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   className = '',
   onCloseMobile,
 }) => {
-  const [copiedExtensionUrl, setCopiedExtensionUrl] = useState(false);
+  const [feedSearch, setFeedSearch] = useState('');
   const cachedFeedList = Object.values(cachedFeeds);
   const totalCachedArticles = cachedFeedList.reduce((acc, f) => acc + (f.items?.length || 0), 0);
+
+  // Filter the "Loaded Feeds" list by feed title or URL.
+  const normalizedFeedSearch = feedSearch.trim().toLowerCase();
+  const filteredCachedFeedList = normalizedFeedSearch
+    ? cachedFeedList.filter((f) => {
+        const title = (f.metadata?.title || '').toLowerCase();
+        return title.includes(normalizedFeedSearch) || f.url.toLowerCase().includes(normalizedFeedSearch);
+      })
+    : cachedFeedList;
 
   // Human-readable age of a cached feed ("just now", "12m ago", "2h ago").
   const formatCacheAge = (updatedAt?: number): string => {
@@ -95,14 +103,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       onSubmitUrl(currentUrl.trim());
       if (onCloseMobile) onCloseMobile();
     }
-  };
-
-  const handleCopyChromeFormat = () => {
-    const origin = window.location.origin;
-    const sample = `${origin}/?rss=${encodeURIComponent(currentUrl || 'https://news.ycombinator.com/rss')}`;
-    navigator.clipboard.writeText(sample);
-    setCopiedExtensionUrl(true);
-    setTimeout(() => setCopiedExtensionUrl(false), 2000);
   };
 
   return (
@@ -125,6 +125,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onOpenChromeHelp}
+            className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Help: RSS URL integration & Chrome extension"
+            aria-label="Open help"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
           <button
             type="button"
             onClick={onToggleTheme}
@@ -153,8 +162,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           RSS Feed URL <span className="text-amber-500 lowercase font-normal">(or ?rss=URL)</span>
         </label>
-        <form onSubmit={handleSubmit} className="space-y-2.5">
-          <div className="relative">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <input
               id="rss-input"
               type="url"
@@ -175,77 +184,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={isLoading || !currentUrl.trim()}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 font-bold text-xs tracking-wide transition-colors shadow-xs cursor-pointer"
-            >
-              {isLoading ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Loading feed...</span>
-                </>
-              ) : (
-                <>
-                  <span>Load Feed</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
-
-            {metadata && (
-              <button
-                type="button"
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="py-2.5 px-3 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs border border-zinc-200 dark:border-zinc-700/60 transition-colors"
-                title="Refresh feed"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              </button>
+          <button
+            type="submit"
+            disabled={isLoading || !currentUrl.trim()}
+            className="flex-shrink-0 p-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 transition-colors shadow-xs cursor-pointer"
+            title={isLoading ? 'Loading feed…' : 'Load feed'}
+            aria-label="Load feed"
+          >
+            {isLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowRight className="w-4 h-4" />
             )}
-          </div>
-        </form>
+          </button>
 
-        {/* Chrome Extension integration helper badge */}
-        <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-900 dark:text-amber-200/90 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1">
-              <Globe className="w-3 h-3" />
-              Chrome Extension URL:
-            </span>
-            <button
-              type="button"
-              onClick={handleCopyChromeFormat}
-              className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 font-medium"
-              title="Copy URL with ?rss= parameter"
-            >
-              {copiedExtensionUrl ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-500" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" />
-                  <span>Copy Link</span>
-                </>
-              )}
-            </button>
-          </div>
-          <code className="bg-amber-500/15 dark:bg-black/40 px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-950 dark:text-zinc-300 truncate">
-            /?rss=YOUR_FEED_URL
-          </code>
           <button
             type="button"
-            onClick={onOpenChromeHelp}
-            className="text-left text-[10px] text-amber-700 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-300 underline underline-offset-2 flex items-center gap-1 mt-0.5"
+            onClick={onRefresh}
+            disabled={isLoading || !currentUrl.trim()}
+            className="flex-shrink-0 p-2.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-700/60 transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh feed from source"
+            aria-label="Refresh feed from source"
           >
-            <Info className="w-3 h-3" />
-            How to configure with Chrome Extension?
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
-        </div>
+        </form>
       </div>
 
       {/* Navigation Tabs */}
@@ -365,6 +328,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
 
+              {/* Quick search across the loaded feeds */}
+              {cachedFeedList.length > 0 && (
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="text"
+                    value={feedSearch}
+                    onChange={(e) => setFeedSearch(e.target.value)}
+                    placeholder="Search loaded feeds..."
+                    className="w-full text-xs pl-8 pr-7 py-2 rounded-lg bg-white dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                  />
+                  {feedSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setFeedSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                      title="Clear feed filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+
               {cachedFeedList.length === 0 ? (
                 <div className="text-center py-6 text-zinc-500 text-xs space-y-3 bg-zinc-100 dark:bg-zinc-800/40 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700/40">
                   <Newspaper className="w-7 h-7 mx-auto text-zinc-400 dark:text-zinc-500 opacity-50" />
@@ -379,9 +366,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   )}
                 </div>
+              ) : filteredCachedFeedList.length === 0 ? (
+                <div className="text-center py-5 px-3 text-zinc-500 text-xs bg-zinc-100 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-700/40">
+                  No loaded feed matches "{feedSearch}".
+                </div>
               ) : (
                 <div className="space-y-2">
-                  {cachedFeedList.map((f) => (
+                  {filteredCachedFeedList.map((f) => (
                     <div
                       key={f.url}
                       className="group p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"

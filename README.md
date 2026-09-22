@@ -11,14 +11,16 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 ### 🔗 Direct URL gateway & Chrome extensions
 - **`?rss=` parameter**: Load any feed directly by opening `/?rss=https://example.com/feed.xml`.
 - **Extension / Bookmarklet integration**: Works with browser extensions (Chrome, Firefox) and one-click bookmarklets to send the current page's feed straight into the reader.
+- **Help dialog**: The **?** icon in the sidebar header opens a dialog with the current feed's Chrome extension URL, the bookmarklet and the extension snippets.
+- **Compact URL bar**: The URL field, the icon-only **Load** button and the **Refresh** button share a single row.
 
 ### 📚 Aggregated "ALL Feeds" view
 - **In-memory combined feeds**: Collects and deduplicates every RSS feed you visit during your session.
 - **Chronological sort**: Articles are sorted newest first, across all sources.
 - **20-article pagination**: Shows 20 articles initially with *"Load 20 more"*, *"Show all"* and *"Reset to 20"* buttons.
 - **Preloaded samples**: One-click button to inject a selection of tech news feeds (The Verge, Ars Technica, Hacker News, GitHub Blog).
-- **Loaded Feeds list**: Shows every feed currently held in memory with its article count and cache age. Hover a feed and click the **✕** to remove it from memory and `localStorage`; **Clear Memory** empties the whole cache.
-- **Per-feed filter & bulk refresh**: Narrow the aggregated list to a single feed with the feed selector, or click **Refresh all** to re-fetch every in-memory feed from its source at once.
+- **Loaded Feeds list**: Shows every feed currently held in memory with its article count and cache age. A search box filters the list, and hovering a feed reveals a **✕** to remove it from memory and `localStorage`; **Clear Memory** empties the whole cache.
+- **Per-feed filter & bulk refresh**: A searchable combo box filters the aggregated list down to a single feed (type to find a feed by title or URL), and **Refresh all** re-fetches every in-memory feed from its source at once.
 
 ### ⚡ Smart 30-minute cache
 - **Per-feed cache**: Every feed you load (metadata + articles) is stored in `localStorage`, keyed by its URL, so it survives page reloads.
