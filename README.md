@@ -145,4 +145,4 @@ When a feed image is rejected, the card simply falls back to the YouTube thumbna
 
 ## 📄 License
 
-This project is released under a free license. See the source code for more details.
+This project is released under the [MIT License](./LICENSE).
