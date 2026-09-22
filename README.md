@@ -1,6 +1,6 @@
 # RSS Viewer 📰
 
-A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images and YouTube videos), an immersive reader mode, in-memory multi-feed aggregation and a smart 30-minute local cache for instant navigation.
+A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images, YouTube videos and audio podcasts), an immersive reader mode, in-memory multi-feed aggregation and a smart 30-minute local cache for instant navigation.
 
 ![RSS Viewer preview](https://raw.githubusercontent.com/onigetoc/simple-rss-reader/refs/heads/main/public/screenshot.png)
 
@@ -39,6 +39,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
   - Adjustable font size (`A` / `A+`).
 - **Safe links in new tabs**: Every link in the content always opens in a new tab (`target="_blank"` with `rel="noopener noreferrer"`).
 - **YouTube videos & thumbnails**: High-quality thumbnail with an optimized video player.
+- **Audio podcasts**: Audio enclosures are detected and played inline with a native audio player; podcast episodes are also flagged with a badge on the card.
 
 ### 🎨 Dark / Light theme & customization
 - **Theme switcher**: Instant toggle between dark and light mode via the Sun/Moon icon.
