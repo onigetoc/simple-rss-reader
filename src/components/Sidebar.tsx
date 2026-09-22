@@ -43,6 +43,7 @@ interface SidebarProps {
   onOpenChromeHelp: () => void;
   cachedFeeds?: Record<string, CachedFeedEntry>;
   onClearCache?: () => void;
+  onRemoveFeed?: (url: string) => void;
   onPreloadSamples?: () => void;
   className?: string;
   onCloseMobile?: () => void;
@@ -68,6 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenChromeHelp,
   cachedFeeds = {},
   onClearCache,
+  onRemoveFeed,
   onPreloadSamples,
   className = '',
   onCloseMobile,
@@ -75,6 +77,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [copiedExtensionUrl, setCopiedExtensionUrl] = useState(false);
   const cachedFeedList = Object.values(cachedFeeds);
   const totalCachedArticles = cachedFeedList.reduce((acc, f) => acc + (f.items?.length || 0), 0);
+
+  // Human-readable age of a cached feed ("just now", "12m ago", "2h ago").
+  const formatCacheAge = (updatedAt?: number): string => {
+    if (!updatedAt) return 'just now';
+    const minutes = Math.floor((Date.now() - updatedAt) / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -371,7 +384,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {cachedFeedList.map((f) => (
                     <div
                       key={f.url}
-                      className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                      className="group p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                     >
                       <button
                         type="button"
@@ -382,13 +395,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }}
                         className="min-w-0 flex-1 text-left cursor-pointer"
                       >
-                        <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate hover:text-amber-500 dark:hover:text-amber-400">
+                        <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate group-hover:text-amber-500 dark:group-hover:text-amber-400">
                           {f.metadata?.title || f.url}
                         </p>
                         <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
                           {f.items?.length || 0} articles
+                          {f.updatedAt ? ` • cached ${formatCacheAge(f.updatedAt)}` : ''}
                         </p>
                       </button>
+
+                      {onRemoveFeed && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveFeed(f.url)}
+                          className="flex-shrink-0 p-1.5 rounded-md text-zinc-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
+                          title={`Remove "${f.metadata?.title || f.url}" from memory`}
+                          aria-label={`Remove ${f.metadata?.title || f.url} from memory`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
 

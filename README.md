@@ -1,6 +1,6 @@
 # RSS Viewer 📰
 
-A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images and YouTube videos), an immersive reader mode and in-memory multi-feed aggregation.
+A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images and YouTube videos), an immersive reader mode, in-memory multi-feed aggregation and a smart 30-minute local cache for instant navigation.
 
 ![RSS Viewer preview](https://raw.githubusercontent.com/onigetoc/simple-rss-reader/refs/heads/main/public/screenshot.png)
 
@@ -17,6 +17,15 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 - **Chronological sort**: Articles are sorted newest first, across all sources.
 - **20-article pagination**: Shows 20 articles initially with *"Load 20 more"*, *"Show all"* and *"Reset to 20"* buttons.
 - **Preloaded samples**: One-click button to inject a selection of tech news feeds (The Verge, Ars Technica, Hacker News, GitHub Blog).
+- **Loaded Feeds list**: Shows every feed currently held in memory with its article count and cache age. Hover a feed and click the **✕** to remove it from memory and `localStorage`; **Clear Memory** empties the whole cache.
+- **Per-feed filter & bulk refresh**: Narrow the aggregated list to a single feed with the feed selector, or click **Refresh all** to re-fetch every in-memory feed from its source at once.
+
+### ⚡ Smart 30-minute cache
+- **Per-feed cache**: Every feed you load (metadata + articles) is stored in `localStorage`, keyed by its URL, so it survives page reloads.
+- **30-minute freshness window**: Re-opening a feed within 30 minutes is instant — no network request and no loading flash.
+- **Stale-while-revalidate**: Past 30 minutes, the cached articles are still displayed immediately while the feed refreshes silently in the background. If the refresh fails, the cached copy is kept.
+- **Manual refresh from source**: The refresh button (and the error **Retry** button) bypasses the cache and re-fetches the live feed, then updates the cache.
+- **Automatic pruning**: The cache is capped at 30 feeds; the oldest entries are removed automatically.
 
 ### 📖 Full article reader (Reader View)
 - **Immersive, distraction-free reading**: Displays the full text, images and embedded videos.

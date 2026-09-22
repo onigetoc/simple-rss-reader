@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Rss,
   RefreshCw,
@@ -36,6 +36,8 @@ import {
   CachedFeedEntry,
   getCachedFeeds,
   saveFeedToCache,
+  removeFeedFromCache,
+  isCacheEntryFresh,
   clearFeedsCache,
   getAllCachedItemsSorted,
 } from './services/rssService';
@@ -79,6 +81,13 @@ export default function App() {
     getCachedFeeds()
   );
 
+  // Refs kept in sync so loadFeed can stay a stable callback without stale closures.
+  const cachedFeedsRef = useRef<Record<string, CachedFeedEntry>>(cachedFeeds);
+  const loadRequestRef = useRef<number>(0);
+  useEffect(() => {
+    cachedFeedsRef.current = cachedFeeds;
+  }, [cachedFeeds]);
+
   // Selected article for detailed reader view
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
@@ -86,6 +95,10 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewMode, setViewMode] = useState<'cards' | 'compact'>('cards');
   const [mediaFilter, setMediaFilter] = useState<'all' | 'with-media'>('all');
+
+  // ALL Feeds: filter the aggregated list down to a single feed + bulk refresh state
+  const [allFeedsFilter, setAllFeedsFilter] = useState<string>('all');
+  const [isRefreshingAll, setIsRefreshingAll] = useState<boolean>(false);
 
   // Reader font size: persisted in memory and localStorage across sessions
   const [fontSize, setFontSize] = useState<ArticleFontSize>(() => getStoredFontSize());
@@ -125,66 +138,111 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Function to load a feed by URL
-  const loadFeed = useCallback(async (urlToLoad: string, updateBrowserUrl = true) => {
-    if (!urlToLoad || !urlToLoad.trim()) return;
+  // Function to load a feed by URL.
+  // Serves a fresh cached copy instantly (30 min TTL) unless forceReload is true,
+  // in which case it always fetches from the source and refreshes the cache.
+  const loadFeed = useCallback(
+    async (urlToLoad: string, updateBrowserUrl = true, forceReload = false) => {
+      if (!urlToLoad || !urlToLoad.trim()) return;
 
-    const trimmed = urlToLoad.trim();
-    setIsLoading(true);
-    setError(null);
-    setInputUrl(trimmed);
-    setActiveUrl(trimmed);
-    setSelectedArticleId(null);
+      const trimmed = urlToLoad.trim();
+      const requestId = ++loadRequestRef.current;
 
-    // Update browser URL query parameter: ?rss=...
-    if (updateBrowserUrl && typeof window !== 'undefined') {
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.set('rss', trimmed);
-      newUrl.searchParams.delete('article');
-      window.history.pushState({ rss: trimmed, articleId: null }, '', newUrl.toString());
-    }
+      setError(null);
+      setInputUrl(trimmed);
+      setActiveUrl(trimmed);
+      setSelectedArticleId(null);
 
-    try {
-      const result: FeedResponse = await fetchFeed(trimmed);
-      setMetadata(result.metadata);
-      setItems(result.items);
-
-      // Save to in-memory feeds cache
-      const updatedCache = saveFeedToCache(trimmed, result.metadata, result.items);
-      setCachedFeeds({ ...updatedCache });
-
-      // Save to history
-      if (result.metadata?.title) {
-        const updatedHistory = addToFeedHistory(trimmed, result.metadata.title);
-        setHistory(updatedHistory);
+      // Update browser URL query parameter: ?rss=...
+      if (updateBrowserUrl && typeof window !== 'undefined') {
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('rss', trimmed);
+        newUrl.searchParams.delete('article');
+        window.history.pushState({ rss: trimmed, articleId: null }, '', newUrl.toString());
       }
 
-      // Update document title
-      if (result.metadata?.title) {
-        document.title = `${result.metadata.title} - RSS Viewer`;
+      // Look up the in-memory cache (kept in a ref so this callback stays stable).
+      const cachedEntry = !forceReload ? cachedFeedsRef.current[trimmed] || null : null;
+
+      // Cache hit: show the stored articles immediately (no loading flash / no network).
+      if (cachedEntry) {
+        setMetadata(cachedEntry.metadata);
+        setItems(cachedEntry.items);
+
+        if (cachedEntry.metadata?.title) {
+          const updatedHistory = addToFeedHistory(trimmed, cachedEntry.metadata.title);
+          setHistory(updatedHistory);
+          document.title = `${cachedEntry.metadata.title} - RSS Viewer`;
+        }
+
+        // Still fresh: nothing else to do.
+        if (isCacheEntryFresh(cachedEntry)) {
+          setIsLoading(false);
+          return;
+        }
+        // Stale: keep showing the cached articles while refreshing in the background.
+      } else {
+        setIsLoading(true);
       }
-    } catch (err: any) {
-      console.error('Error in loadFeed:', err);
-      setError(
-        err.message ||
-          "Unable to load this RSS feed. Please verify the URL is valid and reachable."
-      );
-      setMetadata(null);
-      setItems([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+
+      try {
+        const result: FeedResponse = await fetchFeed(trimmed);
+
+        // Ignore responses from an outdated navigation.
+        if (requestId !== loadRequestRef.current) return;
+
+        setMetadata(result.metadata);
+        setItems(result.items);
+
+        // Save to persistent feeds cache
+        const updatedCache = saveFeedToCache(trimmed, result.metadata, result.items);
+        setCachedFeeds({ ...updatedCache });
+
+        // Save to history
+        if (result.metadata?.title) {
+          const updatedHistory = addToFeedHistory(trimmed, result.metadata.title);
+          setHistory(updatedHistory);
+          document.title = `${result.metadata.title} - RSS Viewer`;
+        }
+      } catch (err: any) {
+        // Ignore errors from an outdated navigation.
+        if (requestId !== loadRequestRef.current) return;
+
+        console.error('Error in loadFeed:', err);
+        // If we already have a (stale) cached copy, keep it instead of wiping the view.
+        if (!cachedEntry) {
+          setError(
+            err.message ||
+              'Unable to load this RSS feed. Please verify the URL is valid and reachable.'
+          );
+          setMetadata(null);
+          setItems([]);
+        }
+      } finally {
+        if (requestId === loadRequestRef.current) {
+          setIsLoading(false);
+        }
+      }
+    },
+    []
+  );
 
   // All items currently cached in memory, merged and sorted by date (newest first)
   const allCachedItems = useMemo(() => {
     return getAllCachedItemsSorted(cachedFeeds);
   }, [cachedFeeds]);
 
-  // Reset pagination to 20 whenever activeTab, search, mediaFilter, or activeUrl changes
+  // Reset pagination to 20 whenever activeTab, search, mediaFilter, feed filter or activeUrl changes
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [activeTab, searchTerm, mediaFilter, activeUrl]);
+  }, [activeTab, searchTerm, mediaFilter, allFeedsFilter, activeUrl]);
+
+  // If the feed selected in the ALL Feeds filter is removed, fall back to "all"
+  useEffect(() => {
+    if (allFeedsFilter !== 'all' && !cachedFeeds[allFeedsFilter]) {
+      setAllFeedsFilter('all');
+    }
+  }, [cachedFeeds, allFeedsFilter]);
 
   // Preload several sample feeds into memory
   const handlePreloadSamples = useCallback(async () => {
@@ -207,6 +265,58 @@ export default function App() {
     setCachedFeeds({});
   }, []);
 
+  // Re-fetch every feed currently held in memory from its source and refresh the cache.
+  const handleRefreshAllFeeds = useCallback(async () => {
+    const urls = Object.keys(cachedFeedsRef.current);
+    if (urls.length === 0) return;
+
+    setIsRefreshingAll(true);
+    try {
+      const results = await Promise.allSettled(
+        urls.map(async (url) => ({ url, res: await fetchFeed(url) }))
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
+        } else {
+          console.warn('Refresh all feeds: one feed failed', result.reason);
+        }
+      }
+
+      const refreshed = getCachedFeeds();
+      setCachedFeeds(refreshed);
+
+      // Keep the currently open feed in sync if it was part of the refresh.
+      const activeEntry = activeUrl ? refreshed[activeUrl] : null;
+      if (activeEntry) {
+        setMetadata(activeEntry.metadata);
+        setItems(activeEntry.items);
+      }
+    } finally {
+      setIsRefreshingAll(false);
+    }
+  }, [activeUrl]);
+
+  // Remove a single feed from the in-memory/localStorage cache (and its history entry)
+  const handleRemoveFeedFromCache = useCallback(
+    (url: string) => {
+      const updatedCache = removeFeedFromCache(url);
+      setCachedFeeds({ ...updatedCache });
+
+      const updatedHistory = removeFromHistory(url);
+      setHistory(updatedHistory);
+
+      // If the removed feed is currently displayed, clear the active view too.
+      if (activeUrl === url || inputUrl === url) {
+        setMetadata(null);
+        setItems([]);
+        setError(null);
+      }
+    },
+    [activeUrl, inputUrl]
+  );
+
   // Filtered items with accent-insensitive search across all text fields
   const displayedItems = useMemo(() => {
     let list =
@@ -215,6 +325,11 @@ export default function App() {
         : activeTab === 'all-feeds'
         ? allCachedItems
         : items;
+
+    // ALL Feeds: optionally narrow the aggregated list to a single feed
+    if (activeTab === 'all-feeds' && allFeedsFilter !== 'all') {
+      list = list.filter((item) => (item.feedUrl || '') === allFeedsFilter);
+    }
 
     if (searchTerm.trim()) {
       const normalizedQuery = normalizeText(searchTerm.trim());
@@ -246,7 +361,7 @@ export default function App() {
     }
 
     return list;
-  }, [activeTab, favorites, allCachedItems, items, searchTerm, mediaFilter]);
+  }, [activeTab, favorites, allCachedItems, items, searchTerm, mediaFilter, allFeedsFilter]);
 
   // 20-at-a-time paginated list of items for the grid/cards view
   const paginatedItems = useMemo(() => {
@@ -397,7 +512,7 @@ export default function App() {
         }}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onRefresh={() => loadFeed(activeUrl || inputUrl, false)}
+        onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
         searchTerm={searchTerm}
         onSearchChange={(val) => {
           setSearchTerm(val);
@@ -406,6 +521,7 @@ export default function App() {
         onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
         cachedFeeds={cachedFeeds}
         onClearCache={handleClearCache}
+        onRemoveFeed={handleRemoveFeedFromCache}
         onPreloadSamples={handlePreloadSamples}
         className="hidden md:flex"
       />
@@ -434,7 +550,7 @@ export default function App() {
             }}
             theme={theme}
             onToggleTheme={toggleTheme}
-            onRefresh={() => loadFeed(activeUrl || inputUrl, false)}
+            onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
             searchTerm={searchTerm}
             onSearchChange={(val) => {
               setSearchTerm(val);
@@ -443,6 +559,7 @@ export default function App() {
             onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
             cachedFeeds={cachedFeeds}
             onClearCache={handleClearCache}
+            onRemoveFeed={handleRemoveFeedFromCache}
             onPreloadSamples={handlePreloadSamples}
             className="relative z-50 w-80 h-full"
             onCloseMobile={() => setIsMobileSidebarOpen(false)}
@@ -733,7 +850,7 @@ export default function App() {
                       <div className="pt-2 flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => loadFeed(activeUrl || inputUrl, false)}
+                          onClick={() => loadFeed(activeUrl || inputUrl, false, true)}
                           className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors"
                         >
                           Retry
@@ -793,14 +910,18 @@ export default function App() {
                           : activeTab === 'favorites'
                           ? 'No bookmarked articles yet'
                           : activeTab === 'all-feeds'
-                          ? 'No feeds loaded in memory yet'
+                          ? allFeedsFilter !== 'all'
+                            ? 'No articles in this feed'
+                            : 'No feeds loaded in memory yet'
                           : 'No articles found in this feed'}
                       </h3>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                         {searchTerm
                           ? `No results for "${searchTerm}". Try checking your spelling or clear the filter.`
                           : activeTab === 'all-feeds'
-                          ? 'Load any RSS feeds from the sidebar or click below to preload sample feeds into memory.'
+                          ? allFeedsFilter !== 'all'
+                            ? 'This feed has no matching articles, or its content was removed. Show all feeds to keep browsing.'
+                            : 'Load any RSS feeds from the sidebar or click below to preload sample feeds into memory.'
                           : 'Select a feed from the left panel or enter a custom RSS URL to get started.'}
                       </p>
                     </div>
@@ -811,6 +932,15 @@ export default function App() {
                         className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-xs font-semibold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
                       >
                         Clear search
+                      </button>
+                    ) : activeTab === 'all-feeds' && allFeedsFilter !== 'all' ? (
+                      <button
+                        type="button"
+                        onClick={() => setAllFeedsFilter('all')}
+                        className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-zinc-950 text-xs font-bold transition-colors inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Newspaper className="w-3.5 h-3.5" />
+                        <span>Show all feeds</span>
                       </button>
                     ) : activeTab === 'all-feeds' ? (
                       <button
@@ -833,13 +963,42 @@ export default function App() {
                         <Newspaper className="w-3.5 h-3.5" />
                       </span>
                       <span>
-                        Displaying <strong>{displayedItems.length}</strong> articles merged from{' '}
-                        <strong>{Object.keys(cachedFeeds).length}</strong> feed(s) in memory, sorted by publication date.
+                        Displaying <strong>{displayedItems.length}</strong>{' '}
+                        {allFeedsFilter !== 'all' ? 'article(s) from this feed' : 'articles merged from'}{' '}
+                        {allFeedsFilter === 'all' && (
+                          <>
+                            <strong>{Object.keys(cachedFeeds).length}</strong> feed(s) in memory, sorted by publication date.
+                          </>
+                        )}
                       </span>
                     </div>
-                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 self-start sm:self-auto">
-                      Showing 20 at a time
-                    </span>
+
+                    <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                      <select
+                        value={allFeedsFilter}
+                        onChange={(e) => setAllFeedsFilter(e.target.value)}
+                        className="max-w-[200px] text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-500/30 text-zinc-700 dark:text-zinc-200 focus:outline-hidden focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                        title="Show the articles of a single feed"
+                      >
+                        <option value="all">All feeds ({Object.keys(cachedFeeds).length})</option>
+                        {Object.values(cachedFeeds).map((f) => (
+                          <option key={f.url} value={f.url}>
+                            {f.metadata?.title || f.url}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={handleRefreshAllFeeds}
+                        disabled={isRefreshingAll}
+                        className="inline-flex items-center justify-center p-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed text-zinc-950 transition-colors cursor-pointer"
+                        title="Refresh all feeds from source"
+                        aria-label="Refresh all feeds from source"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin' : ''}`} />
+                      </button>
+                    </div>
                   </div>
                 )}
 

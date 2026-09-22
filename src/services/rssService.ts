@@ -333,6 +333,9 @@ export interface CachedFeedEntry {
   updatedAt: number;
 }
 
+/** How long a cached feed is considered fresh before a network refresh is attempted. */
+export const FEEDS_CACHE_TTL_MS = 30 * 60 * 1000;
+
 export function getCachedFeeds(): Record<string, CachedFeedEntry> {
   try {
     const raw = localStorage.getItem(STORAGE_FEEDS_CACHE_KEY);
@@ -358,6 +361,24 @@ export function getCachedFeeds(): Record<string, CachedFeedEntry> {
   } catch {
     return {};
   }
+}
+
+/** Returns the cached entry for a URL, or null when nothing is stored. */
+export function getCachedFeedEntry(url: string): CachedFeedEntry | null {
+  if (!url) return null;
+  return getCachedFeeds()[url.trim()] || null;
+}
+
+/**
+ * True when the cached entry is still inside the freshness window.
+ * A missing entry (or one without a timestamp) is always considered stale.
+ */
+export function isCacheEntryFresh(
+  entry: CachedFeedEntry | null | undefined,
+  ttlMs: number = FEEDS_CACHE_TTL_MS
+): boolean {
+  if (!entry || !entry.updatedAt) return false;
+  return Date.now() - entry.updatedAt < ttlMs;
 }
 
 export function saveFeedToCache(
