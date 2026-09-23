@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { memo, useState } from 'react';
 import {
   ExternalLink,
   Bookmark,
@@ -23,7 +23,7 @@ interface FeedItemCardProps {
   viewMode?: 'cards' | 'compact';
 }
 
-export const FeedItemCard: React.FC<FeedItemCardProps> = ({
+const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
   item,
   isFavorite,
   onToggleFavorite,
@@ -50,12 +50,15 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
   const [feedImageStatus, setFeedImageStatus] = useState<'pending' | 'ok' | 'bad'>(
     feedImageCandidate ? 'pending' : 'bad'
   );
+  const [probedUrl, setProbedUrl] = useState(feedImageCandidate);
 
   // Re-validate when the item's image URL changes (e.g. feed refresh in place).
-  useEffect(() => {
+  // Adjusting state during render replaces a per-card useEffect: on the common
+  // mount path only the comparison below runs — no effect, no dependency array.
+  if (probedUrl !== feedImageCandidate) {
+    setProbedUrl(feedImageCandidate);
     setFeedImageStatus(feedImageCandidate ? 'pending' : 'bad');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.imageUrl]);
+  }
 
   // Effective images (prioritize a validated feed image, or YouTube thumbnail)
   const validFeedImage = feedImageStatus === 'ok' ? feedImageCandidate : undefined;
@@ -71,11 +74,13 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
         alt=""
         aria-hidden="true"
         referrerPolicy="no-referrer"
+        decoding="async"
         onLoad={(e) => {
           const { naturalWidth, naturalHeight } = e.currentTarget;
           setFeedImageStatus(isImageTooSmall(naturalWidth, naturalHeight) ? 'bad' : 'ok');
         }}
         onError={() => setFeedImageStatus('bad')}
+        loading="lazy"
         className="pointer-events-none absolute h-px w-px opacity-0"
       />
     ) : null;
@@ -133,7 +138,7 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
       <article
         id={`article-${item.id}`}
         onClick={() => onSelectArticle(item)}
-        className="group relative flex items-center justify-between gap-4 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-amber-500/40 dark:hover:border-amber-500/40 transition-all cursor-pointer"
+        className="group relative flex items-center justify-between gap-4 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-amber-500/40 dark:hover:border-amber-500/40 transition-colors cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_76px]"
       >
         {imageProbe}
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
@@ -145,6 +150,7 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
                 onError={() => setFeedImageStatus('bad')}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
+                decoding="async"
                 loading="lazy"
               />
               {isYoutube && (
@@ -220,7 +226,7 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
     <article
       id={`article-${item.id}`}
       onClick={() => onSelectArticle(item)}
-      className="group relative rounded-2xl border border-zinc-200/90 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/80 shadow-xs hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-500/30 transition-all duration-200 overflow-hidden flex flex-col cursor-pointer"
+      className="group relative rounded-2xl border border-zinc-200/90 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/80 shadow-xs hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-500/30 transition-[border-color,box-shadow] duration-200 overflow-hidden flex flex-col cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_420px]"
     >
       {imageProbe}
       {/* Media Header: Image or YouTube Thumbnail */}
@@ -232,6 +238,7 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
             onError={() => setFeedImageStatus('bad')}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             referrerPolicy="no-referrer"
+            decoding="async"
             loading="lazy"
           />
 
@@ -242,8 +249,8 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
               </div>
 
               <div className="absolute top-3 right-3">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-black/80 text-white backdrop-blur-xs border border-white/10 shadow-md">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-black/80 text-white border border-white/10 shadow-md">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
                   YouTube
                 </span>
               </div>
@@ -388,3 +395,7 @@ export const FeedItemCard: React.FC<FeedItemCardProps> = ({
     </article>
   );
 };
+
+// Every prop is a primitive or a `useCallback`-stable handler, so the default
+// shallow comparison is enough to skip re-renders of unchanged cards.
+export const FeedItemCard = memo(FeedItemCardComponent);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef, startTransition } from 'react';
 import {
   Rss,
   RefreshCw,
@@ -519,11 +519,12 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [loadFeed]);
 
-  // Handle Favorites toggle
-  const handleToggleFavorite = (item: FeedItem) => {
+  // Handle Favorites toggle. Stable identity matters: FeedItemCard is memoized
+  // and receives this handler, so a new function per render would defeat it.
+  const handleToggleFavorite = useCallback((item: FeedItem) => {
     const updated = saveFavorite(item);
     setFavorites(updated);
-  };
+  }, []);
 
   const handleRemoveHistory = (url: string) => {
     const updated = removeFromHistory(url);
@@ -1085,10 +1086,16 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* Growing the list mounts many cards at once. Wrapping the
+                              update in a transition lets React yield between cards, so the
+                              page stays responsive instead of freezing until every card
+                              has mounted. */}
                           {visibleCount < displayedItems.length && (
                             <button
                               type="button"
-                              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
+                              onClick={() =>
+                                startTransition(() => setVisibleCount((prev) => prev + PAGE_SIZE))
+                              }
                               className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                             >
                               <span>Load 20 more articles</span>
@@ -1101,7 +1108,9 @@ export default function App() {
                           {visibleCount < displayedItems.length && (
                             <button
                               type="button"
-                              onClick={() => setVisibleCount(displayedItems.length)}
+                              onClick={() =>
+                                startTransition(() => setVisibleCount(displayedItems.length))
+                              }
                               className="px-3.5 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs transition-colors cursor-pointer"
                             >
                               Show all ({displayedItems.length})

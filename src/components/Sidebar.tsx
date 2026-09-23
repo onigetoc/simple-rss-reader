@@ -17,11 +17,11 @@ import {
   X,
   Layers,
   Newspaper,
-  Database,
 } from 'lucide-react';
 import { FeedItem, FeedMetadata } from '../types';
 import { PRESET_FEEDS } from '../data/presets';
 import { FeedHistoryItem, CachedFeedEntry } from '../services/rssService';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface SidebarProps {
   currentUrl: string;
@@ -77,6 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
 }) => {
   const [feedSearch, setFeedSearch] = useState('');
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const cachedFeedList = Object.values(cachedFeeds);
   const totalCachedArticles = cachedFeedList.reduce((acc, f) => acc + (f.items?.length || 0), 0);
 
@@ -310,35 +311,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* TAB: ALL FEEDS (IN-MEMORY AGGREGATION) */}
         {activeTab === 'all-feeds' && (
           <div className="space-y-4">
-            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5" />
-                  Feeds in Memory
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                  {cachedFeedList.length} feed(s)
-                </span>
-              </div>
-              <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
-                All articles loaded in memory are combined and displayed by chronological order (newest first).
-              </p>
-              <div className="pt-1 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                <span>{totalCachedArticles} total articles cached</span>
-              </div>
-            </div>
-
             {/* In-Memory Feed List */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 px-0.5">
-                <span className="font-semibold text-zinc-700 dark:text-zinc-300">Loaded Feeds ({cachedFeedList.length})</span>
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                  Loaded Feeds ({cachedFeedList.length})
+                  {cachedFeedList.length > 0 && (
+                    <span className="font-normal text-zinc-500 dark:text-zinc-400">
+                      {' '}• {totalCachedArticles} article{totalCachedArticles === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
                 {cachedFeedList.length > 0 && onClearCache && (
                   <button
                     type="button"
-                    onClick={onClearCache}
-                    className="text-[11px] text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors cursor-pointer"
+                    onClick={() => setIsClearConfirmOpen(true)}
+                    className="text-[11px] font-semibold text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Delete all feeds"
+                    aria-label="Delete all feeds"
                   >
-                    Clear Memory
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete All
                   </button>
                 )}
               </div>
@@ -415,8 +408,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           type="button"
                           onClick={() => onRemoveFeed(f.url)}
                           className="flex-shrink-0 p-1.5 rounded-md text-zinc-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
-                          title={`Remove "${f.metadata?.title || f.url}" from memory`}
-                          aria-label={`Remove ${f.metadata?.title || f.url} from memory`}
+                          title={`Remove "${f.metadata?.title || f.url}"`}
+                          aria-label={`Remove ${f.metadata?.title || f.url}`}
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -665,6 +658,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           Extension setup
         </button>
       </div>
+
+      <ConfirmDialog
+        isOpen={isClearConfirmOpen}
+        destructive
+        title="Delete all feeds?"
+        message={
+          <>
+            This will permanently remove all <strong>{cachedFeedList.length}</strong> feed(s) and their{' '}
+            <strong>{totalCachedArticles}</strong> cached article(s). This action cannot be undone.
+          </>
+        }
+        confirmLabel="Delete All"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setIsClearConfirmOpen(false);
+          onClearCache?.();
+        }}
+        onCancel={() => setIsClearConfirmOpen(false)}
+      />
     </aside>
   );
 };
