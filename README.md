@@ -20,7 +20,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 - **20-article pagination**: Shows 20 articles initially with *"Load 20 more"*, *"Show all"* and *"Reset to 20"* buttons.
 - **Preloaded samples**: One-click button to inject a selection of tech news feeds (The Verge, Ars Technica, Hacker News, GitHub Blog).
 - **Loaded Feeds list**: Shows every feed currently held in memory with its article count and cache age. A search box filters the list, and hovering a feed reveals a **✕** to remove it from memory and `localStorage`; **Delete All** empties the whole cache after a confirmation dialog.
-- **Per-feed filter & bulk refresh**: A searchable combo box filters the aggregated list down to a single feed (type to find a feed by title or URL), and **Refresh all** re-fetches every in-memory feed from its source at once.
+- **Per-feed filter & bulk refresh**: A searchable combo box filters the aggregated list down to a single feed (type to find a feed by title or URL), and **Refresh all** re-fetches every in-memory feed from its source at once. When a single feed is open in the **Feed** view, a floating refresh button (icon only) reloads just that feed.
 
 > 💡 **Tip — search across everything:** When **ALL Feeds** is showing every in-memory feed, the search bar queries the **entire combined list at once** — every article from every loaded feed, merged and deduplicated. This makes it great for precise research: even very specific or unexpected keywords can surface matching articles across all your sources. Keep in mind this cross-feed search only covers feeds currently in memory, so load (or **Refresh all**) the feeds you want to search through first.
 
@@ -141,6 +141,21 @@ Some feeds expose a 1×1 analytics/tracking pixel as the item's image (for examp
 - **Real-size check** (browser): the image is measured via `naturalWidth` / `naturalHeight` on load; anything smaller than **64 px** on either side is dropped. The browser already downloaded the image to display it, so this costs nothing extra.
 
 When a feed image is rejected, the card simply falls back to the YouTube thumbnail (if any) or to a text-only layout — never a stretched pixel. The threshold lives in `MIN_IMAGE_DIMENSION` in `src/utils/imageFilter.ts`.
+
+---
+
+## 🖼️ Smart image variant selection
+
+Many feeds (WordPress sites, NASA, news outlets…) expose the same photo at several widths through `srcset`, `?w=`/`?h=` query params or `-1024x683` filename suffixes. Some also expose a multi-megabyte original as the `enclosure` (NASA's Image of the Day ships 15–96 MB files). Loading the original means the browser must decode a huge bitmap and re-rasterize it while scrolling, which makes the list lag even after the image is loaded.
+
+To avoid that, the server gathers every candidate (content `<img>` + each `srcset` variant, `media:content`, `media:thumbnail`, enclosure) and picks the **smallest variant that still renders crisply on a card**:
+
+- minimum **350 × 200 px** — tiny thumbnails are never stretched into a card;
+- dimensions are inferred from `?w=`/`?h=`, `srcset` `400w` descriptors, `width`/`height` attributes and WordPress `-WxH` suffixes;
+- HTML entities (`&#038;`) in content URLs are decoded so multi-parameter image URLs stay valid;
+- if no size can be determined, the historical enclosure → media → content precedence is kept, and a small image is preferred over no image at all.
+
+The logic lives in `extractFirstImage` in `server.ts`.
 
 ---
 

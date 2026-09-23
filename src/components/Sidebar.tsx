@@ -30,7 +30,7 @@ interface SidebarProps {
   metadata: FeedMetadata | null;
   favorites: FeedItem[];
   history: FeedHistoryItem[];
-  onSelectFeed: (url: string) => void;
+  onSelectFeed: (url: string, updateInput?: boolean) => void;
   onRemoveHistory: (url: string) => void;
   activeTab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets';
   setActiveTab: (tab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets') => void;
@@ -378,7 +378,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          onSelectFeed(f.url);
+                          // Picking a feed from ALL Feeds loads it without overwriting the URL input.
+                          onSelectFeed(f.url, false);
                           setActiveTab('feed');
                           if (onCloseMobile) onCloseMobile();
                         }}

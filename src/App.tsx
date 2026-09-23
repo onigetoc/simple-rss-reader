@@ -146,7 +146,7 @@ export default function App() {
   // Serves a fresh cached copy instantly (30 min TTL) unless forceReload is true,
   // in which case it always fetches from the source and refreshes the cache.
   const loadFeed = useCallback(
-    async (urlToLoad: string, updateBrowserUrl = true, forceReload = false) => {
+    async (urlToLoad: string, updateBrowserUrl = true, forceReload = false, updateInput = true) => {
       if (!urlToLoad || !urlToLoad.trim()) return;
 
       const trimmed = urlToLoad.trim();
@@ -158,7 +158,8 @@ export default function App() {
       const requestId = ++loadRequestRef.current;
 
       setError(null);
-      setInputUrl(trimmed);
+      // Selecting from ALL Feeds (updateInput = false) must not overwrite the URL field.
+      if (updateInput) setInputUrl(trimmed);
       setActiveUrl(trimmed);
       setSelectedArticleId(null);
 
@@ -256,10 +257,10 @@ export default function App() {
   // return to the single "Feed" view so the freshly loaded feed is displayed,
   // even if the user was browsing ALL Feeds, Favorites, History, etc.
   const handleSelectFeed = useCallback(
-    (url: string) => {
+    (url: string, updateInput = true) => {
       setActiveTab('feed');
       setSelectedArticleId(null);
-      loadFeed(url, true);
+      loadFeed(url, true, false, updateInput);
     },
     [loadFeed]
   );
@@ -619,7 +620,7 @@ export default function App() {
       )}
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+      <main className="relative flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
         {/* If an article is selected, show ArticleReaderView */}
         {selectedArticle ? (
           <ErrorBoundary
@@ -871,6 +872,20 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {/* Floating refresh button for the single feed currently displayed */}
+            {activeTab === 'feed' && activeUrl && (
+              <button
+                type="button"
+                onClick={() => loadFeed(activeUrl, false, true)}
+                disabled={isLoading}
+                title="Refresh this feed from source"
+                aria-label="Refresh this feed from source"
+                className="absolute top-20 right-4 sm:right-6 z-30 inline-flex items-center justify-center p-2.5 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed text-zinc-950 shadow-lg shadow-amber-500/20 transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
+            )}
 
             {/* Stream / Articles View */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

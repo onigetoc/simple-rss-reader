@@ -58,52 +58,161 @@ const parser = new Parser<CustomFeed, CustomItem>({
   },
 });
 
-function extractFirstImage(
-  item: CustomItem,
-  rawHtml?: string
-): string | undefined {
-  // 1. Direct enclosure image
-  if (
-    item.enclosure?.url &&
-    !isLikelyTrackingImage(item.enclosure.url) &&
-    (item.enclosure.type?.startsWith('image/') ||
-      /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(item.enclosure.url))
-  ) {
-    return item.enclosure.url;
-  }
+/**
+ * Minimum size for the image shown on a card. Smaller variants look pixelated
+ * once stretched, so they are ignored when the feed also offers a bigger one.
+ */
+const MIN_CARD_IMAGE_WIDTH = 350;
+const MIN_CARD_IMAGE_HEIGHT = 200;
 
-  // 2. Media content
-  if (Array.isArray(item.mediaContent) && item.mediaContent.length > 0) {
-    for (const m of item.mediaContent) {
-      const url = m?.$?.url || m?.url;
-      const medium = m?.$?.medium || m?.medium;
-      if (
-        url &&
-        !isLikelyTrackingImage(url) &&
-        (medium === 'image' || /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(url))
-      ) {
-        return url;
+interface ImageCandidate {
+  url: string;
+  width?: number;
+  height?: number;
+}
+
+function toPositiveInt(value: unknown): number | undefined {
+  const parsed =
+    typeof value === 'number' ? value : typeof value === 'string' ? parseInt(value, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined;
+}
+
+/** Read an attribute from a raw HTML tag string (double, single or unquoted). */
+function getAttribute(tag: string, name: string): string | undefined {
+  const match = tag.match(
+    new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+  );
+  return match ? match[1] ?? match[2] ?? match[3] : undefined;
+}
+
+function isImageUrl(url: string): boolean {
+  return /\.(jpe?g|png|webp|gif|svg|avif)(\?.*)?$/i.test(url);
+}
+
+/** Decode the HTML entities feeds often leave in `content:encoded` URLs. */
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&#0*38;/g, '&')
+    .replace(/&amp;/gi, '&')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&quot;/gi, '"');
+}
+
+/**
+ * Best-effort dimensions for a candidate URL, from the `?w=`/`?h=`/`?resize=`
+ * query params (WordPress/NASA dynamic images) or the WordPress `-1024x683`
+ * filename suffix. Returns undefined when the size cannot be inferred.
+ */
+function getUrlDimensions(url: string): { width?: number; height?: number } {
+  let width: number | undefined;
+  let height: number | undefined;
+  try {
+    const parsed = new URL(url);
+    width = toPositiveInt(
+      parsed.searchParams.get('w') ||
+        parsed.searchParams.get('width') ||
+        parsed.searchParams.get('resize')
+    );
+    height = toPositiveInt(parsed.searchParams.get('h') || parsed.searchParams.get('height'));
+  } catch {
+    // Relative URLs never reach here: candidates require an absolute http(s) URL.
+  }
+  if (width === undefined || height === undefined) {
+    const sized = url.match(/-(\d{2,5})x(\d{2,5})(?=\.(?:jpe?g|png|webp|gif|avif)(?:$|[?#]))/i);
+    if (sized) {
+      width = width ?? toPositiveInt(sized[1]);
+      height = height ?? toPositiveInt(sized[2]);
+    }
+  }
+  return { width, height };
+}
+
+/** True when a candidate's known dimensions fall below the card minimum. */
+function isKnownTooSmall(candidate: ImageCandidate): boolean {
+  return (
+    (candidate.width !== undefined && candidate.width < MIN_CARD_IMAGE_WIDTH) ||
+    (candidate.height !== undefined && candidate.height < MIN_CARD_IMAGE_HEIGHT)
+  );
+}
+
+/**
+ * Parse every <img> in a chunk of HTML into groups (one per tag, in document
+ * order) so the lead image is preferred while each of its `srcset` variants
+ * becomes a separate candidate.
+ */
+function extractContentImageGroups(html: string): ImageCandidate[][] {
+  const groups: ImageCandidate[][] = [];
+  const imgTag = /<img\b[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = imgTag.exec(html)) !== null) {
+    // Feeds frequently encode "&" as "&#038;" inside content:encoded. Decoding
+    // it here keeps multi-parameter image URLs (w/h/fit) intact in the browser.
+    const tag = decodeHtmlEntities(match[0]);
+    const attrWidth = toPositiveInt(getAttribute(tag, 'width'));
+    const attrHeight = toPositiveInt(getAttribute(tag, 'height'));
+    const group: ImageCandidate[] = [];
+
+    const srcset = getAttribute(tag, 'srcset') || getAttribute(tag, 'data-srcset');
+    if (srcset) {
+      for (const entry of srcset.split(',')) {
+        const [url, descriptor] = entry.trim().split(/\s+/);
+        if (!url || !/^https?:\/\//i.test(url)) continue;
+        const dims = getUrlDimensions(url);
+        const width =
+          dims.width ??
+          (descriptor && /^\d+w$/i.test(descriptor) ? toPositiveInt(descriptor) : undefined) ??
+          attrWidth;
+        group.push({ url, width, height: dims.height ?? attrHeight });
       }
     }
-  } else if (item.mediaContent) {
-    const url = item.mediaContent?.$?.url || item.mediaContent?.url;
-    if (url && !isLikelyTrackingImage(url)) return url;
-  }
 
-  // 3. Media thumbnail
-  if (Array.isArray(item.mediaThumbnail) && item.mediaThumbnail.length > 0) {
-    for (const t of item.mediaThumbnail) {
-      const thumb = t?.$?.url || t?.url;
-      if (thumb && !isLikelyTrackingImage(thumb)) return thumb;
+    const src = getAttribute(tag, 'src') || getAttribute(tag, 'data-src');
+    if (src && /^https?:\/\//i.test(src)) {
+      const dims = getUrlDimensions(src);
+      group.push({ url: src, width: dims.width ?? attrWidth, height: dims.height ?? attrHeight });
     }
-  } else if (item.mediaThumbnail) {
-    const thumb = item.mediaThumbnail?.$?.url || item.mediaThumbnail?.url;
-    if (thumb && !isLikelyTrackingImage(thumb)) return thumb;
-  }
 
-  // 4. Regex extraction from content or description.
-  // Scan every <img> and keep the first one that isn't a tracking pixel,
-  // so a feed can still expose a real image after an analytics pixel.
+    if (group.length > 0) groups.push(group);
+  }
+  return groups;
+}
+
+/** Turn a Media RSS node (media:content / media:thumbnail) into candidates. */
+function extractMediaImageCandidates(node: any): ImageCandidate[] {
+  if (!node) return [];
+  const entries = Array.isArray(node) ? node : [node];
+  const candidates: ImageCandidate[] = [];
+  for (const entry of entries) {
+    const url = entry?.$?.url || entry?.url;
+    if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue;
+    const dims = getUrlDimensions(url);
+    const width = toPositiveInt(entry?.$?.width ?? entry?.width) ?? dims.width;
+    const height = toPositiveInt(entry?.$?.height ?? entry?.height) ?? dims.height;
+    candidates.push({ url, width, height });
+  }
+  return candidates;
+}
+
+/**
+ * Pick the smallest candidate that still renders crisply on a card
+ * (>= 350x200). Returns undefined when no candidate declares a usable size,
+ * so callers can fall back to the historical behaviour.
+ */
+function pickCardSizedImage(candidates: ImageCandidate[]): string | undefined {
+  const qualifying = candidates.filter(
+    (c) =>
+      !isLikelyTrackingImage(c.url) &&
+      c.width !== undefined &&
+      c.height !== undefined &&
+      c.width >= MIN_CARD_IMAGE_WIDTH &&
+      c.height >= MIN_CARD_IMAGE_HEIGHT
+  );
+  if (qualifying.length === 0) return undefined;
+  qualifying.sort((a, b) => a.width! * a.height! - b.width! * b.height!);
+  return qualifying[0].url;
+}
+
+function extractFirstImage(item: CustomItem, rawHtml?: string): string | undefined {
   const contentToSearch = [
     item.contentEncoded,
     item.content,
@@ -113,19 +222,71 @@ function extractFirstImage(
     .filter(Boolean)
     .join(' ');
 
-  if (contentToSearch) {
-    const imgRegex =
-      /<img[^>]+(?:src|data-src)=["'](https?:\/\/[^"'\s>]+)["']/gi;
-    let match: RegExpExecArray | null;
-    while ((match = imgRegex.exec(contentToSearch)) !== null) {
-      const candidate = match[1];
-      if (candidate && !isLikelyTrackingImage(candidate)) {
-        return candidate;
-      }
-    }
+  const contentGroups = contentToSearch ? extractContentImageGroups(contentToSearch) : [];
+  const mediaContentImages = extractMediaImageCandidates(item.mediaContent);
+  const mediaThumbnailImages = extractMediaImageCandidates(item.mediaThumbnail);
+
+  const enclosureUrl =
+    item.enclosure?.url &&
+    !isLikelyTrackingImage(item.enclosure.url) &&
+    (item.enclosure.type?.startsWith('image/') || isImageUrl(item.enclosure.url))
+      ? item.enclosure.url
+      : undefined;
+  const enclosureImage: ImageCandidate | undefined = enclosureUrl
+    ? { url: enclosureUrl, ...getUrlDimensions(enclosureUrl) }
+    : undefined;
+
+  // 1. Prefer the smallest source that is still large enough for a card. Feeds
+  //    often expose the same photo at many widths (srcset, `?w=` params); using
+  //    a 400px variant instead of a multi-megabyte original keeps decoding and
+  //    scrolling cheap. The lead image is checked first, then media/enclosure.
+  for (const group of contentGroups) {
+    const best = pickCardSizedImage(group);
+    if (best) return best;
+  }
+  const bestMedia = pickCardSizedImage(mediaContentImages);
+  if (bestMedia) return bestMedia;
+  const bestThumbnail = pickCardSizedImage(mediaThumbnailImages);
+  if (bestThumbnail) return bestThumbnail;
+  if (enclosureImage) {
+    const bestEnclosure = pickCardSizedImage([enclosureImage]);
+    if (bestEnclosure) return bestEnclosure;
   }
 
-  // 5. Check YouTube video thumbnail from link, ID, or content
+  // 2. No sized variant available: keep the historical precedence so nothing
+  //    regresses for feeds that do not declare any dimensions. Candidates whose
+  //    known size is below the card minimum are de-prioritised (a small image
+  //    beats no image, but a decent one beats a tiny thumbnail).
+  const usable = (c: ImageCandidate) => !isLikelyTrackingImage(c.url) && !isKnownTooSmall(c);
+
+  if (enclosureImage && usable(enclosureImage)) return enclosureImage.url;
+
+  const firstMediaContent = mediaContentImages.find(usable);
+  if (firstMediaContent) return firstMediaContent.url;
+
+  const firstThumbnail = mediaThumbnailImages.find(usable);
+  if (firstThumbnail) return firstThumbnail.url;
+
+  for (const group of contentGroups) {
+    const first = group.find(usable);
+    if (first) return first.url;
+  }
+
+  // 3. Last resort: accept a small thumbnail rather than showing no image at all.
+  if (enclosureImage && !isLikelyTrackingImage(enclosureImage.url)) return enclosureImage.url;
+
+  const anyMediaContent = mediaContentImages.find((c) => !isLikelyTrackingImage(c.url));
+  if (anyMediaContent) return anyMediaContent.url;
+
+  const anyThumbnail = mediaThumbnailImages.find((c) => !isLikelyTrackingImage(c.url));
+  if (anyThumbnail) return anyThumbnail.url;
+
+  for (const group of contentGroups) {
+    const first = group.find((c) => !isLikelyTrackingImage(c.url));
+    if (first) return first.url;
+  }
+
+  // 4. Check YouTube video thumbnail from link, ID, or content
   const ytId =
     extractYouTubeVideoId(item.link) ||
     extractYouTubeVideoId(item.id) ||
