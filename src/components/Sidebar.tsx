@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { FeedItem, FeedMetadata } from '../types';
 import { PRESET_FEEDS } from '../data/presets';
-import { FeedHistoryItem, CachedFeedEntry } from '../services/rssService';
+import { FeedHistoryItem, CachedFeedEntry, findCachedFeedKey } from '../services/rssService';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface SidebarProps {
@@ -79,6 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
   const cachedFeedList = Object.values(cachedFeeds);
   const totalCachedArticles = cachedFeedList.reduce((acc, f) => acc + (f.items?.length || 0), 0);
+
+  // A URL equivalent to a feed already in memory: submitting it will open the
+  // saved copy rather than add a duplicate. Only warn when the input is a
+  // *different spelling* of the stored URL — not when it is the active feed.
+  const duplicateFeedKey = findCachedFeedKey(currentUrl, cachedFeeds);
+  const showDuplicateHint = Boolean(duplicateFeedKey) && duplicateFeedKey !== currentUrl.trim();
 
   // Filter the "Loaded Feeds" list by feed title or URL.
   const normalizedFeedSearch = feedSearch.trim().toLowerCase();
@@ -182,7 +188,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="submit"
             disabled={isLoading || !currentUrl.trim()}
             className="flex-shrink-0 p-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-zinc-950 transition-colors shadow-xs cursor-pointer"
-            title={isLoading ? 'Loading feed…' : 'Load feed'}
+            title={
+              isLoading
+                ? 'Loading feed…'
+                : duplicateFeedKey
+                ? 'Already in memory — open the saved copy'
+                : 'Load feed'
+            }
             aria-label="Load feed"
           >
             {isLoading ? (
@@ -215,6 +227,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           )}
         </form>
+        {showDuplicateHint && !isLoading && (
+          <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+            <Rss className="w-3 h-3 flex-shrink-0" />
+            <span>Already in memory — it won&apos;t be added twice.</span>
+          </p>
+        )}
       </div>
 
       {/* Navigation Tabs */}

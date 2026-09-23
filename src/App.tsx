@@ -16,6 +16,7 @@ import {
   Newspaper,
   Layers,
   Sparkles,
+  Info,
 } from 'lucide-react';
 import { FeedItem, FeedMetadata, FeedResponse } from './types';
 import { PRESET_FEEDS } from './data/presets';
@@ -41,6 +42,7 @@ import {
   clearFeedsCache,
   getAllCachedItemsSorted,
   isAbortError,
+  findCachedFeedKey,
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
@@ -127,6 +129,16 @@ export default function App() {
   const [isChromeHelpOpen, setIsChromeHelpOpen] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
 
+  // Transient info shown when the user tries to add a feed already in memory.
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(null);
+
+  // Auto-dismiss the duplicate-feed notice.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 4500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // Apply theme to <html>
   useEffect(() => {
     const root = document.documentElement;
@@ -151,6 +163,12 @@ export default function App() {
 
       const trimmed = urlToLoad.trim();
 
+      // A feed already in memory must never be added a second time: resolve any
+      // URL spelling that maps to an existing entry (missing scheme, `www.`,
+      // trailing slash, query-parameter order…) back to its stored key.
+      const existingKey = findCachedFeedKey(trimmed, cachedFeedsRef.current);
+      const effectiveUrl = existingKey || trimmed;
+
       // Cancel any previous in-flight request before starting a new one.
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
@@ -159,20 +177,20 @@ export default function App() {
 
       setError(null);
       // Selecting from ALL Feeds (updateInput = false) must not overwrite the URL field.
-      if (updateInput) setInputUrl(trimmed);
-      setActiveUrl(trimmed);
+      if (updateInput) setInputUrl(effectiveUrl);
+      setActiveUrl(effectiveUrl);
       setSelectedArticleId(null);
 
       // Update browser URL query parameter: ?rss=...
       if (updateBrowserUrl && typeof window !== 'undefined') {
         const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set('rss', trimmed);
+        newUrl.searchParams.set('rss', effectiveUrl);
         newUrl.searchParams.delete('article');
-        window.history.pushState({ rss: trimmed, articleId: null }, '', newUrl.toString());
+        window.history.pushState({ rss: effectiveUrl, articleId: null }, '', newUrl.toString());
       }
 
       // Look up the in-memory cache (kept in a ref so this callback stays stable).
-      const cachedEntry = !forceReload ? cachedFeedsRef.current[trimmed] || null : null;
+      const cachedEntry = !forceReload ? cachedFeedsRef.current[effectiveUrl] || null : null;
 
       // Cache hit: show the stored articles immediately (no loading flash / no network).
       if (cachedEntry) {
@@ -199,7 +217,7 @@ export default function App() {
       abortControllerRef.current = controller;
 
       try {
-        const result: FeedResponse = await fetchFeed(trimmed, controller.signal);
+        const result: FeedResponse = await fetchFeed(effectiveUrl, controller.signal);
 
         // Ignore responses from an outdated navigation.
         if (requestId !== loadRequestRef.current) return;
@@ -207,13 +225,14 @@ export default function App() {
         setMetadata(result.metadata);
         setItems(result.items);
 
-        // Save to persistent feeds cache
-        const updatedCache = saveFeedToCache(trimmed, result.metadata, result.items);
+        // Save to persistent feeds cache (reusing the existing key when present,
+        // so an equivalent URL can never create a duplicate entry).
+        const updatedCache = saveFeedToCache(effectiveUrl, result.metadata, result.items);
         setCachedFeeds({ ...updatedCache });
 
         // Save to history
         if (result.metadata?.title) {
-          const updatedHistory = addToFeedHistory(trimmed, result.metadata.title);
+          const updatedHistory = addToFeedHistory(effectiveUrl, result.metadata.title);
           setHistory(updatedHistory);
           document.title = `${result.metadata.title} - RSS Viewer`;
         }
@@ -263,6 +282,29 @@ export default function App() {
       loadFeed(url, true, false, updateInput);
     },
     [loadFeed]
+  );
+
+  // Add a feed from the URL input. A feed already held in memory is never added
+  // again: instead we surface a notice and open the existing copy.
+  const handleSubmitNewFeed = useCallback(
+    (url: string) => {
+      const trimmed = url.trim();
+      if (!trimmed) return;
+
+      const existingKey = findCachedFeedKey(trimmed, cachedFeedsRef.current);
+      if (existingKey) {
+        setNotice({
+          id: Date.now(),
+          text: 'This feed is already in memory — opening the saved copy instead of adding it again.',
+        });
+        handleSelectFeed(existingKey);
+        return;
+      }
+
+      setNotice(null);
+      handleSelectFeed(trimmed);
+    },
+    [handleSelectFeed]
   );
 
   // All items currently cached in memory, merged and sorted by date (newest first)
@@ -546,7 +588,7 @@ export default function App() {
       <Sidebar
         currentUrl={inputUrl}
         onUrlChange={setInputUrl}
-        onSubmitUrl={handleSelectFeed}
+        onSubmitUrl={handleSubmitNewFeed}
         isLoading={isLoading}
         metadata={metadata}
         favorites={favorites}
@@ -586,7 +628,7 @@ export default function App() {
           <Sidebar
             currentUrl={inputUrl}
             onUrlChange={setInputUrl}
-            onSubmitUrl={handleSelectFeed}
+            onSubmitUrl={handleSubmitNewFeed}
             isLoading={isLoading}
             metadata={metadata}
             favorites={favorites}
@@ -904,6 +946,23 @@ export default function App() {
                     >
                       <X className="w-3 h-3" />
                       Clear search
+                    </button>
+                  </div>
+                )}
+
+                {/* Duplicate feed notice */}
+                {notice && (
+                  <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Info className="w-4 h-4 flex-shrink-0" />
+                      <span>{notice.text}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setNotice(null)}
+                      className="flex-shrink-0 font-semibold underline hover:text-amber-900 dark:hover:text-amber-100"
+                    >
+                      Dismiss
                     </button>
                   </div>
                 )}

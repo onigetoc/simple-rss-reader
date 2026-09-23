@@ -159,6 +159,66 @@ The logic lives in `extractFirstImage` in `server.ts`.
 
 ---
 
+## 🌐 Interesting feeds to try
+
+Any of these can be loaded directly through the `?rss=` parameter, for example `/?rss=<feed-url>`. Most services build the feed on the fly from a query string, so you can tweak the keywords and options freely.
+
+### 🔎 Google News search
+
+Google News turns any query into a feed — great for keyword monitoring across thousands of sources.
+
+```text
+https://news.google.com/rss/search?q=ai+openai
+```
+
+You can also restrict the search to a single site with the `site:` operator, for example to only get YouTube videos about a topic:
+
+```text
+https://news.google.com/rss/search?q=ai+openai+site:youtube.com
+```
+
+> 💡 Tip: `+` is the encoded form of a space. Use quotes (`%22…%22`) for exact phrases, `OR` for alternatives, and add `when:7d` to limit results to the last 7 days.
+
+### 👽 Reddit
+
+Search across all of Reddit:
+
+```text
+https://www.reddit.com/search.rss?q=ai+openai&sort=hot
+```
+
+Or follow a single subreddit with its classic sort variants — `hot`, `top` and `new`:
+
+```text
+https://www.reddit.com/r/LocalLLaMA/hot/.rss
+https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day
+https://www.reddit.com/r/LocalLLaMA/new/.rss
+```
+
+`t=` accepts `hour`, `day`, `week`, `month`, `year` or `all` (used with `top` and `controversial`).
+
+### ▶️ YouTube channels & playlists
+
+Every channel exposes an Atom feed. Grab the channel ID (`UC…`) from the channel's page:
+
+```text
+https://www.youtube.com/feeds/videos.xml?channel_id=UCawZsQWqfGSbCI5yjkdVkTA
+```
+
+That one is **@matthew_berman**. Playlists work the same way with a playlist ID:
+
+```text
+https://www.youtube.com/feeds/videos.xml?playlist_id=PLxxxxxxxxxxxxxxxx
+```
+
+> 🔧 **Finding the ID**: if you don't know a channel's `UC…` ID or a playlist ID, the free [News Keeper YouTube tool](https://newskeeper.pages.dev/tools/youtube) looks them up for you — paste a channel or video URL and it returns the channel feed, playlist feeds and more.
+
+### 📰 Preloaded tech feeds
+
+The **ALL Feeds** view ships with a one-click sample pack (The Verge, Ars Technica, Hacker News, GitHub Blog) so you can start exploring right away.
+
+---
+
 ## 📄 License
 
 This project is released under the [MIT License](./LICENSE).

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import Parser from 'rss-parser';
 import { createServer as createViteServer } from 'vite';
 import { isLikelyTrackingImage } from './src/utils/imageFilter';
+import { decodeGoogleNewsLinks, unwrapGoogleRedirectUrl } from './src/utils/googleNews';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -491,10 +492,13 @@ async function startServer() {
       return;
     }
 
-    let targetUrl = rawUrl.trim();
+    let targetUrl = unwrapGoogleRedirectUrl(rawUrl.trim());
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = 'https://' + targetUrl;
     }
+    // Unwrap again: a Google redirect URL only reveals its target once the
+    // scheme is present (the bare `google.com/url?q=...` form has none).
+    targetUrl = unwrapGoogleRedirectUrl(targetUrl);
 
     try {
       // Validate URL
@@ -562,6 +566,10 @@ async function startServer() {
           feedUrl: targetUrl,
         };
       });
+
+      // Google News RSS items point at news.google.com redirects; swap them for
+      // the publisher's original article URL so links open the real source.
+      await decodeGoogleNewsLinks(items);
 
       res.json({
         metadata: {

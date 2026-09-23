@@ -359,6 +359,54 @@ export interface CachedFeedEntry {
   updatedAt: number;
 }
 
+/**
+ * Canonical form of a feed URL, used to detect feeds already held in memory.
+ * Two URLs pointing at the same feed but differing only by a missing scheme,
+ * a `www.` prefix, a trailing slash, a default port or query-parameter order
+ * collapse to the same key. Returns an empty string for unusable input.
+ */
+export function normalizeFeedUrl(rawUrl?: string | null): string {
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) return '';
+
+  let candidate = trimmed;
+  if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate}`;
+
+  try {
+    const parsed = new URL(candidate);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const isDefaultPort =
+      (parsed.protocol === 'http:' && parsed.port === '80') ||
+      (parsed.protocol === 'https:' && parsed.port === '443');
+    const port = parsed.port && !isDefaultPort ? `:${parsed.port}` : '';
+    const path = parsed.pathname.replace(/\/+$/, '');
+    const query = Array.from(parsed.searchParams.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&');
+    return `${host}${port}${path}${query ? `?${query}` : ''}`;
+  } catch {
+    // Not a parseable URL: fall back to a trimmed, lower-cased comparison.
+    return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+/**
+ * Key of a feed already present in the in-memory cache that is equivalent to
+ * `url` (same feed, possibly a different URL spelling), or null when absent.
+ */
+export function findCachedFeedKey(
+  url: string,
+  cache: Record<string, CachedFeedEntry>
+): string | null {
+  const target = normalizeFeedUrl(url);
+  if (!target) return null;
+  for (const key of Object.keys(cache)) {
+    if (normalizeFeedUrl(key) === target) return key;
+  }
+  return null;
+}
+
 /** How long a cached feed is considered fresh before a network refresh is attempted. */
 export const FEEDS_CACHE_TTL_MS = 30 * 60 * 1000;
 
@@ -383,16 +431,45 @@ export function getCachedFeeds(): Record<string, CachedFeedEntry> {
         };
       }
     }
-    return sanitized;
+    // Collapse URLs that point at the same feed — e.g. entries saved before
+    // URL normalization existed, or two spellings of the same URL — keeping the
+    // most recently updated entry so a feed can never appear twice in memory.
+    const deduped: Record<string, CachedFeedEntry> = {};
+    const keptKeyByNormalized = new Map<string, string>();
+    for (const [key, entry] of Object.entries(sanitized)) {
+      const normalized = normalizeFeedUrl(key) || `raw:${key}`;
+      const keptKey = keptKeyByNormalized.get(normalized);
+      if (!keptKey) {
+        keptKeyByNormalized.set(normalized, key);
+        deduped[key] = entry;
+      } else if ((entry.updatedAt || 0) > (deduped[keptKey].updatedAt || 0)) {
+        delete deduped[keptKey];
+        keptKeyByNormalized.set(normalized, key);
+        deduped[key] = entry;
+      }
+    }
+
+    // Persist the cleanup when duplicates were actually collapsed.
+    if (Object.keys(deduped).length !== Object.keys(sanitized).length) {
+      try {
+        localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(deduped));
+      } catch {
+        // Persisting is best-effort: keep serving the deduped entries in memory.
+      }
+    }
+
+    return deduped;
   } catch {
     return {};
   }
 }
 
-/** Returns the cached entry for a URL, or null when nothing is stored. */
+/** Returns the cached entry for a URL (any equivalent spelling), or null. */
 export function getCachedFeedEntry(url: string): CachedFeedEntry | null {
   if (!url) return null;
-  return getCachedFeeds()[url.trim()] || null;
+  const cache = getCachedFeeds();
+  const key = findCachedFeedKey(url, cache);
+  return key ? cache[key] : null;
 }
 
 /**
