@@ -11,6 +11,11 @@ interface FeedFaviconProps {
   className?: string;
   /** Colour of the fallback RSS icon. */
   fallbackClassName?: string;
+  /**
+   * Draw a subtle rounded plate behind the image. Useful on plain backgrounds
+   * so transparent icons stay visible; turn off inside a coloured badge.
+   */
+  withPlate?: boolean;
 }
 
 /**
@@ -21,6 +26,7 @@ export const FeedFavicon: React.FC<FeedFaviconProps> = ({
   faviconUrl,
   className = 'w-4 h-4',
   fallbackClassName = 'text-amber-500',
+  withPlate = true,
 }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -32,7 +38,9 @@ export const FeedFavicon: React.FC<FeedFaviconProps> = ({
         loading="lazy"
         decoding="async"
         onError={() => setHasError(true)}
-        className={`flex-shrink-0 rounded-sm object-contain bg-white/60 dark:bg-zinc-700/40 ${className}`}
+        className={`flex-shrink-0 rounded-sm object-contain ${
+          withPlate ? 'bg-white/60 dark:bg-zinc-700/40' : ''
+        } ${className}`}
       />
     );
   }

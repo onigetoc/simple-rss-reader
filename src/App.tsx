@@ -43,6 +43,7 @@ import {
   getAllCachedItemsSorted,
   isAbortError,
   findCachedFeedKey,
+  getGoogleFaviconUrl,
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
@@ -464,6 +465,15 @@ export default function App() {
     return displayedItems.find((item) => item.id === selectedArticleId) || null;
   }, [selectedArticleId, displayedItems]);
 
+  // Favicon of the feed the open article comes from: prefer the favicon stored
+  // in the feed cache, fall back to deriving it from the feed URL.
+  const selectedArticleFaviconUrl = useMemo(() => {
+    if (!selectedArticle) return null;
+    const feedUrl = selectedArticle.feedUrl || '';
+    const key = findCachedFeedKey(feedUrl, cachedFeeds);
+    return (key ? cachedFeeds[key]?.faviconUrl : null) || getGoogleFaviconUrl(feedUrl);
+  }, [selectedArticle, cachedFeeds]);
+
   const currentArticleIndex = useMemo(() => {
     if (!selectedArticleId) return -1;
     return displayedItems.findIndex((item) => item.id === selectedArticleId);
@@ -677,6 +687,7 @@ export default function App() {
               onPrev={handlePrevArticle}
               hasNext={currentArticleIndex < displayedItems.length - 1}
               hasPrev={currentArticleIndex > 0}
+              faviconUrl={selectedArticleFaviconUrl}
               nextTitle={
                 currentArticleIndex < displayedItems.length - 1
                   ? displayedItems[currentArticleIndex + 1]?.title

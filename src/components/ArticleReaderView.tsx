@@ -18,6 +18,7 @@ import {
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
 import { isImageTooSmall, isLikelyTrackingImage } from '../utils/imageFilter';
+import { FeedFavicon } from './FeedFavicon';
 import {
   ArticleFontSize,
   getStoredFontSize,
@@ -90,6 +91,8 @@ interface ArticleReaderViewProps {
   totalCount: number;
   fontSize?: ArticleFontSize;
   onFontSizeChange?: (size: ArticleFontSize) => void;
+  /** URL of the feed's favicon, shown in the source badge. */
+  faviconUrl?: string | null;
 }
 
 export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
@@ -107,6 +110,7 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
   totalCount,
   fontSize: propFontSize,
   onFontSizeChange,
+  faviconUrl,
 }) => {
   const [copied, setCopied] = useState(false);
   // Default to stored font size preference so it is remembered across sessions
@@ -354,7 +358,13 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           {/* Feed Title & Category Header */}
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             {article.feedTitle && (
-              <span className="font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
+                <FeedFavicon
+                  faviconUrl={faviconUrl}
+                  className="w-3.5 h-3.5"
+                  fallbackClassName="text-amber-600 dark:text-amber-400"
+                  withPlate={false}
+                />
                 {getSafeDisplayString(article.feedTitle)}
               </span>
             )}
