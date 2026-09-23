@@ -22,6 +22,29 @@ import { PRESET_FEEDS } from '../data/presets';
 import { FeedHistoryItem, CachedFeedEntry, findCachedFeedKey } from '../services/rssService';
 import { ConfirmDialog } from './ConfirmDialog';
 
+/**
+ * Small favicon for a loaded feed. Falls back to the amber RSS icon when the
+ * favicon URL is unknown or the image fails to load.
+ */
+const FeedFavicon: React.FC<{ entry: CachedFeedEntry }> = ({ entry }) => {
+  const [hasError, setHasError] = useState(false);
+
+  if (entry.faviconUrl && !hasError) {
+    return (
+      <img
+        src={entry.faviconUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setHasError(true)}
+        className="w-4 h-4 flex-shrink-0 rounded-sm object-contain bg-white/60 dark:bg-zinc-700/40"
+      />
+    );
+  }
+
+  return <Rss className="w-4 h-4 flex-shrink-0 text-amber-500" />;
+};
+
 interface SidebarProps {
   currentUrl: string;
   onUrlChange: (newUrl: string) => void;
@@ -401,15 +424,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           setActiveTab('feed');
                           if (onCloseMobile) onCloseMobile();
                         }}
-                        className="min-w-0 flex-1 text-left cursor-pointer"
+                        className="min-w-0 flex-1 flex items-center gap-2 text-left cursor-pointer"
                       >
-                        <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate group-hover:text-amber-500 dark:group-hover:text-amber-400">
-                          {f.metadata?.title || f.url}
-                        </p>
-                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                          {f.items?.length || 0} articles
-                          {f.updatedAt ? ` • cached ${formatCacheAge(f.updatedAt)}` : ''}
-                        </p>
+                        <FeedFavicon entry={f} />
+                        <span className="min-w-0">
+                          <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate group-hover:text-amber-500 dark:group-hover:text-amber-400">
+                            {f.metadata?.title || f.url}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                            {f.items?.length || 0} articles
+                            {f.updatedAt ? ` • cached ${formatCacheAge(f.updatedAt)}` : ''}
+                          </p>
+                        </span>
                       </button>
 
                       {onRemoveFeed && (

@@ -357,6 +357,12 @@ export interface CachedFeedEntry {
   metadata: FeedMetadata;
   items: FeedItem[];
   updatedAt: number;
+  /**
+   * URL of the feed's website favicon (Google favicon service). Only the URL is
+   * stored, never the image itself. `null` means no domain could be derived, in
+   * which case the UI falls back to its own RSS icon.
+   */
+  faviconUrl?: string | null;
 }
 
 /**
@@ -500,6 +506,7 @@ export function saveFeedToCache(
         feedUrl: it.feedUrl || url,
       })),
       updatedAt: Date.now(),
+      faviconUrl: getGoogleFaviconUrl(metadata?.link || url),
     };
 
     // Cap cache at 30 feeds to stay performant
@@ -537,6 +544,60 @@ export function clearFeedsCache(): void {
   try {
     localStorage.removeItem(STORAGE_FEEDS_CACHE_KEY);
   } catch {}
+}
+
+// Google's favicon service always returns an image for a domain (falling back
+// to a generic globe), which is far simpler and more reliable than parsing each
+// site for <link rel="icon"> ourselves. Only the URL is stored, never the image.
+const MULTI_PART_TLDS = new Set([
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk', 'sch.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au',
+  'co.nz', 'net.nz', 'org.nz', 'govt.nz',
+  'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp',
+  'com.br', 'net.br', 'org.br', 'gov.br',
+  'co.in', 'net.in', 'org.in', 'gov.in',
+  'co.za', 'org.za', 'net.za',
+  'com.mx', 'com.ar', 'com.tr', 'com.cn', 'com.hk', 'com.sg', 'com.tw',
+  'co.kr', 'or.kr', 'co.id', 'co.th', 'com.my', 'com.ph', 'com.vn',
+]);
+
+/**
+ * Reduce a hostname to its registrable domain so the favicon lookup targets the
+ * site itself rather than a feed subdomain: `feeds.bbci.co.uk` → `bbci.co.uk`,
+ * `www.theverge.com` → `theverge.com`. Bare hostnames and IPs are kept as-is.
+ */
+export function getRegistrableDomain(hostname: string): string {
+  const host = (hostname || '').toLowerCase().replace(/^www\./, '');
+  if (!host) return '';
+  // IPv4 / IPv6: no domain to reduce.
+  if (/^[\d.]+$/.test(host) || host.includes(':')) return host;
+
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  if (MULTI_PART_TLDS.has(parts.slice(-2).join('.'))) {
+    return parts.slice(-3).join('.');
+  }
+  return parts.slice(-2).join('.');
+}
+
+/**
+ * Build the Google favicon URL for a feed's website. Returns null when no
+ * usable domain can be derived.
+ */
+export function getGoogleFaviconUrl(siteUrl?: string | null): string | null {
+  const seed = (siteUrl || '').trim();
+  if (!seed) return null;
+
+  let candidate = seed;
+  if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate}`;
+
+  try {
+    const domain = getRegistrableDomain(new URL(candidate).hostname);
+    if (!domain) return null;
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+  } catch {
+    return null;
+  }
 }
 
 /**
