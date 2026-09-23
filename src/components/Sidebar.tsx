@@ -13,7 +13,6 @@ import {
   Sun,
   Moon,
   Info,
-  HelpCircle,
   X,
   Layers,
   Newspaper,
@@ -129,15 +128,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onOpenChromeHelp}
-            className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-            title="Help: RSS URL integration & Chrome extension"
-            aria-label="Open help"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
           <button
             type="button"
             onClick={onToggleTheme}
