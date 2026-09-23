@@ -503,7 +503,9 @@ export function saveFeedToCache(
       items: items.map((it) => ({
         ...it,
         feedTitle: it.feedTitle || metadata.title,
-        feedUrl: it.feedUrl || url,
+        // Always group items under their cache key so lookups (favicon, per-feed
+        // filter) stay consistent even when the server normalized the URL.
+        feedUrl: url,
       })),
       updatedAt: Date.now(),
       faviconUrl: getGoogleFaviconUrl(metadata?.link || url),

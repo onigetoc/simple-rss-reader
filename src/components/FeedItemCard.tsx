@@ -14,6 +14,7 @@ import {
 import { FeedItem } from '../types';
 import { Youtube } from '../utils/youtube';
 import { isImageTooSmall, isLikelyTrackingImage } from '../utils/imageFilter';
+import { FeedFavicon } from './FeedFavicon';
 
 interface FeedItemCardProps {
   item: FeedItem;
@@ -21,6 +22,9 @@ interface FeedItemCardProps {
   onToggleFavorite: (item: FeedItem) => void;
   onSelectArticle: (item: FeedItem) => void;
   viewMode?: 'cards' | 'compact';
+  /** Show the feed favicon (only useful in the aggregated ALL Feeds list). */
+  showFeedFavicon?: boolean;
+  feedFaviconUrl?: string | null;
 }
 
 const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
@@ -29,6 +33,8 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
   onToggleFavorite,
   onSelectArticle,
   viewMode = 'cards',
+  showFeedFavicon = false,
+  feedFaviconUrl = null,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -165,8 +171,16 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
               {item.feedTitle && (
-                <span className="font-semibold text-amber-600 dark:text-amber-400 truncate max-w-[150px]">
-                  {item.feedTitle}
+                <span className="flex items-center gap-1.5 min-w-0 font-semibold text-amber-600 dark:text-amber-400">
+                  {showFeedFavicon && (
+                    <FeedFavicon
+                      faviconUrl={feedFaviconUrl}
+                      className="w-3.5 h-3.5"
+                      fallbackClassName="text-amber-600 dark:text-amber-400"
+                      withPlate={false}
+                    />
+                  )}
+                  <span className="truncate max-w-[150px]">{item.feedTitle}</span>
                 </span>
               )}
               {formattedDate && <span>• {formattedDate}</span>}
@@ -297,7 +311,15 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <div className="flex items-center gap-2 flex-wrap">
               {item.feedTitle && (
-                <span className="font-semibold text-amber-600 dark:text-amber-400/90 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded text-[11px] border border-amber-200/50 dark:border-amber-800/40">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400/90 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded text-[11px] border border-amber-200/50 dark:border-amber-800/40">
+                  {showFeedFavicon && (
+                    <FeedFavicon
+                      faviconUrl={feedFaviconUrl}
+                      className="w-3 h-3"
+                      fallbackClassName="text-amber-600 dark:text-amber-400/90"
+                      withPlate={false}
+                    />
+                  )}
                   {item.feedTitle}
                 </span>
               )}

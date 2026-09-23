@@ -1157,6 +1157,8 @@ export default function App() {
                           onToggleFavorite={handleToggleFavorite}
                           onSelectArticle={handleSelectArticle}
                           viewMode={viewMode}
+                          showFeedFavicon={activeTab === 'all-feeds'}
+                          feedFaviconUrl={cachedFeeds[item.feedUrl || '']?.faviconUrl ?? null}
                         />
                       ))}
                     </div>
