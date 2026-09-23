@@ -46,6 +46,7 @@ import {
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
+import { FeedFavicon } from './components/FeedFavicon';
 import { ArticleReaderView } from './components/ArticleReaderView';
 import { ChromeExtensionHelpModal } from './components/ChromeExtensionHelpModal';
 import { FeedFilterCombobox } from './components/FeedFilterCombobox';
@@ -712,6 +713,12 @@ export default function App() {
 
                 <div className="min-w-0 max-w-xs sm:max-w-sm lg:max-w-md">
                   <div className="flex items-center gap-2">
+                    {activeTab === 'feed' && activeUrl && (
+                      <FeedFavicon
+                        faviconUrl={cachedFeeds[activeUrl]?.faviconUrl ?? null}
+                        className="w-4 h-4 sm:w-5 sm:h-5"
+                      />
+                    )}
                     <h1 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
                       {activeTab === 'favorites'
                         ? 'Bookmarked Articles'
