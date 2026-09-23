@@ -161,7 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           htmlFor="rss-input"
           className="block text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2"
         >
-          RSS Feed URL <span className="text-amber-500 lowercase font-normal">(or ?rss=URL)</span>
+          RSS Feed URL
         </label>
         <form onSubmit={handleSubmit} className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
