@@ -730,11 +730,14 @@ export default function App() {
                         className="w-4 h-4 sm:w-5 sm:h-5"
                       />
                     )}
+                    {activeTab === 'all-feeds' && (
+                      <Rss className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 text-zinc-700 dark:text-white" />
+                    )}
                     <h1 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 truncate">
                       {activeTab === 'favorites'
                         ? 'Bookmarked Articles'
                         : activeTab === 'all-feeds'
-                        ? 'ALL Feeds (In Memory)'
+                        ? 'ALL Feeds'
                         : metadata?.title || 'RSS Feed Reader'}
                     </h1>
                     {activeTab === 'feed' && metadata?.itemCount !== undefined && (
