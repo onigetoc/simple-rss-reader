@@ -1,14 +1,11 @@
-import express, { Request, Response } from 'express';
+import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
+import fastifyMiddie from '@fastify/middie';
+import fastifyStatic from '@fastify/static';
 import path from 'path';
-import http from 'http';
-import { fileURLToPath } from 'url';
 import Parser from 'rss-parser';
 import { createServer as createViteServer } from 'vite';
 import { isLikelyTrackingImage } from './src/utils/imageFilter';
 import { decodeGoogleNewsLinks, unwrapGoogleRedirectUrl } from './src/utils/googleNews';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 interface CustomFeed {
   title?: string;
@@ -450,8 +447,7 @@ const FEED_ACCEPT =
 // every refresh, which is what previously tripped the IP rate limit (error 1015).
 const curlUaHosts = new Set<string>();
 
-// DOM fetch Response — `Response` alone would resolve to Express's type
-// because of the express import above.
+// DOM fetch Response, aliased so it cannot collide with a server reply type.
 type FetchResponse = Awaited<ReturnType<typeof fetch>>;
 
 // YouTube / Google feeds often answer 429 (rate limit) or time out, then work
@@ -569,17 +565,15 @@ async function fetchFeedText(url: string): Promise<string> {
 }
 
 async function startServer() {
-  const app = express();
+  const app = Fastify({ logger: false });
   const PORT = process.env.PORT ? Number(process.env.PORT) : 3008;
 
-  app.use(express.json());
-
   // API Route: RSS Feed Parser & Proxy
-  app.get('/api/rss', async (req: Request, res: Response) => {
-    const rawUrl = req.query.url as string | undefined;
+  app.get('/api/rss', async (request: FastifyRequest, reply: FastifyReply) => {
+    const rawUrl = (request.query as { url?: string }).url;
 
     if (!rawUrl || typeof rawUrl !== 'string') {
-      res.status(400).json({ error: "The 'url' query parameter is required." });
+      reply.code(400).send({ error: "The 'url' query parameter is required." });
       return;
     }
 
@@ -595,7 +589,7 @@ async function startServer() {
       // Validate URL
       new URL(targetUrl);
     } catch {
-      res.status(400).json({ error: 'Invalid RSS feed URL.' });
+      reply.code(400).send({ error: 'Invalid RSS feed URL.' });
       return;
     }
 
@@ -662,7 +656,7 @@ async function startServer() {
       // the publisher's original article URL so links open the real source.
       await decodeGoogleNewsLinks(items);
 
-      res.json({
+      reply.send({
         metadata: {
           title: toSafeString(parsed.title, 'Unnamed RSS Feed'),
           description: toSafeString(parsed.description),
@@ -676,7 +670,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error('Error fetching/parsing RSS feed:', err);
-      res.status(500).json({
+      reply.code(500).send({
         error:
           err.message ||
           'An error occurred while retrieving or parsing the RSS feed.',
@@ -685,39 +679,51 @@ async function startServer() {
   });
 
   // Health check endpoint
-  app.get('/api/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  app.get('/api/health', async (_request: FastifyRequest, reply: FastifyReply) => {
+    reply.send({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {
-    // Create the HTTP server first so Vite can attach its HMR WebSocket to it.
-    // Sharing the same port (3008) avoids clashing with other Vite dev servers
-    // that use Vite's default standalone HMR port (24678).
-    const httpServer = http.createServer(app);
+    // Fastify's underlying Node HTTP server is reused so Vite can attach its HMR
+    // WebSocket to it. Sharing the same port (3008) avoids clashing with other
+    // Vite dev servers that use Vite's default standalone HMR port (24678).
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        ws: { server: httpServer },
+        ws: { server: app.server },
       },
       appType: 'spa',
     });
-    app.use(vite.middlewares);
 
-    httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    await app.register(fastifyMiddie);
+    // Let Vite own every non-API request (assets, HMR client, index.html); the
+    // `/api/*` routes stay on Fastify so Vite's SPA fallback cannot swallow them.
+    app.use((req, res, next) => {
+      if (req.url?.startsWith('/api/')) {
+        next();
+        return;
+      }
+      vite.middlewares(req, res, next);
     });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    await app.register(fastifyStatic, {
+      root: distPath,
+      // No catch-all route: unknown paths fall through to the SPA fallback below.
+      wildcard: false,
     });
-
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        reply.code(404).send({ error: 'Not found.' });
+        return;
+      }
+      reply.sendFile('index.html');
     });
   }
+
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
 }
 
 startServer();

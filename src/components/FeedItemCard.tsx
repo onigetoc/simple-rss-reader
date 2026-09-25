@@ -27,6 +27,11 @@ interface FeedItemCardProps {
   feedFaviconUrl?: string | null;
 }
 
+// Validation results survive unmounts (e.g. opening an article and going
+// back): a known-bad URL never reserves placeholder space again, a known-good
+// one renders its <img> immediately — no repeated expand/collapse on return.
+const imageValidityCache = new Map<string, 'ok' | 'bad'>();
+
 const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
   item,
   isFavorite,
@@ -53,9 +58,13 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
 
   // Measure the real image once the browser decodes it: a 1x1 tracking pixel
   // must never be stretched into a big black box. 'pending' until then.
-  const [feedImageStatus, setFeedImageStatus] = useState<'pending' | 'ok' | 'bad'>(
-    feedImageCandidate ? 'pending' : 'bad'
-  );
+  // The media containers below are ALWAYS rendered at their final size while
+  // pending (skeleton placeholder), so the card never grows/jumps when the
+  // image arrives — this kills the layout shift on (re)mount.
+  const [feedImageStatus, setFeedImageStatus] = useState<'pending' | 'ok' | 'bad'>(() => {
+    if (feedImageCandidate) return imageValidityCache.get(feedImageCandidate) ?? 'pending';
+    return ytThumbBig || ytThumbSmall ? 'ok' : 'bad';
+  });
   const [probedUrl, setProbedUrl] = useState(feedImageCandidate);
 
   // Re-validate when the item's image URL changes (e.g. feed refresh in place).
@@ -63,33 +72,54 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
   // mount path only the comparison below runs — no effect, no dependency array.
   if (probedUrl !== feedImageCandidate) {
     setProbedUrl(feedImageCandidate);
-    setFeedImageStatus(feedImageCandidate ? 'pending' : 'bad');
+    if (feedImageCandidate) {
+      setFeedImageStatus(imageValidityCache.get(feedImageCandidate) ?? 'pending');
+    } else {
+      setFeedImageStatus(ytThumbBig || ytThumbSmall ? 'ok' : 'bad');
+    }
   }
 
-  // Effective images (prioritize a validated feed image, or YouTube thumbnail)
+  // Effective images (prioritize a validated feed image, or YouTube thumbnail).
+  // YouTube thumbnails are trusted: no size probing needed, shown immediately.
   const validFeedImage = feedImageStatus === 'ok' ? feedImageCandidate : undefined;
   const effectiveImageUrl = validFeedImage || ytThumbBig;
   const compactImageUrl = validFeedImage || ytThumbSmall || ytThumbBig;
 
-  // Invisible probe that loads the candidate image off-screen so its natural
-  // dimensions can be checked without ever showing a stretched placeholder.
-  const imageProbe =
-    feedImageStatus === 'pending' && feedImageCandidate ? (
-      <img
-        src={feedImageCandidate}
-        alt=""
-        aria-hidden="true"
-        referrerPolicy="no-referrer"
-        decoding="async"
-        onLoad={(e) => {
-          const { naturalWidth, naturalHeight } = e.currentTarget;
-          setFeedImageStatus(isImageTooSmall(naturalWidth, naturalHeight) ? 'bad' : 'ok');
-        }}
-        onError={() => setFeedImageStatus('bad')}
-        loading="lazy"
-        className="pointer-events-none absolute h-px w-px opacity-0"
-      />
-    ) : null;
+  // While a feed image is being validated, its own URL is loaded inside the
+  // already-reserved box (so the box never resizes when validation succeeds).
+  const cardImageSrc =
+    feedImageStatus === 'pending' && feedImageCandidate ? feedImageCandidate : effectiveImageUrl;
+  const compactImageSrc =
+    feedImageStatus === 'pending' && feedImageCandidate ? feedImageCandidate : compactImageUrl;
+
+  // Space is reserved as soon as a candidate URL exists (pending included),
+  // so mounting the list never shifts when images decode. Known-bad URLs
+  // (tiny/tracking images) reserve nothing, thanks to the module cache above.
+  const hasCardMedia = Boolean(ytThumbBig || (feedImageCandidate && feedImageStatus !== 'bad'));
+  const cardMediaReady = Boolean(cardImageSrc) && feedImageStatus !== 'pending';
+  const hasCompactMedia = Boolean(
+    ytThumbSmall || ytThumbBig || (feedImageCandidate && feedImageStatus !== 'bad')
+  );
+  const compactMediaReady = Boolean(compactImageSrc) && feedImageStatus !== 'pending';
+
+  const handleFeedImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    // The candidate is only size-checked when the loaded source actually is the
+    // candidate (a YouTube fallback thumbnail is always trusted).
+    const isCandidate = e.currentTarget.getAttribute('src') === feedImageCandidate;
+    if (!isCandidate) {
+      if (isYoutube) setFeedImageStatus('ok');
+      return;
+    }
+    const { naturalWidth, naturalHeight } = e.currentTarget;
+    const next = isImageTooSmall(naturalWidth, naturalHeight) ? 'bad' : 'ok';
+    imageValidityCache.set(feedImageCandidate!, next);
+    setFeedImageStatus(next);
+  };
+
+  const handleFeedImageError = () => {
+    if (feedImageCandidate) imageValidityCache.set(feedImageCandidate, 'bad');
+    setFeedImageStatus('bad');
+  };
 
   const handleCopyLink = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -146,19 +176,24 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
         onClick={() => onSelectArticle(item)}
         className="group relative flex items-center justify-between gap-4 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 hover:border-amber-500/40 dark:hover:border-amber-500/40 transition-colors cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_76px]"
       >
-        {imageProbe}
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          {compactImageUrl && (
+          {hasCompactMedia && (
             <div className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-zinc-100 dark:bg-zinc-800">
-              <img
-                src={compactImageUrl}
-                alt=""
-                onError={() => setFeedImageStatus('bad')}
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                decoding="async"
-                loading="lazy"
-              />
+              {!compactMediaReady && (
+                <div className="absolute inset-0 animate-pulse bg-zinc-200 dark:bg-zinc-700/60" aria-hidden="true" />
+              )}
+              {compactImageSrc && (
+                <img
+                  src={compactImageSrc}
+                  alt=""
+                  onLoad={handleFeedImageLoad}
+                  onError={handleFeedImageError}
+                  className={`w-full h-full object-cover transition-opacity duration-200 ${compactMediaReady ? 'opacity-100' : 'opacity-0'}`}
+                  referrerPolicy="no-referrer"
+                  decoding="async"
+                  loading="lazy"
+                />
+              )}
               {isYoutube && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                   <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-xs">
@@ -242,19 +277,25 @@ const FeedItemCardComponent: React.FC<FeedItemCardProps> = ({
       onClick={() => onSelectArticle(item)}
       className="group relative rounded-2xl border border-zinc-200/90 dark:border-zinc-800/80 bg-white dark:bg-zinc-900/80 shadow-xs hover:shadow-xl hover:border-amber-500/40 dark:hover:border-amber-500/30 transition-[border-color,box-shadow] duration-200 overflow-hidden flex flex-col cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_420px]"
     >
-      {imageProbe}
-      {/* Media Header: Image or YouTube Thumbnail */}
-      {effectiveImageUrl ? (
-        <div className="relative w-full aspect-16/9 overflow-hidden bg-zinc-900">
-          <img
-            src={effectiveImageUrl}
-            alt={item.title}
-            onError={() => setFeedImageStatus('bad')}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            referrerPolicy="no-referrer"
-            decoding="async"
-            loading="lazy"
-          />
+      {/* Media Header: fixed aspect-16/9 box reserved while pending (skeleton),
+          image fades in on top — the card height never changes when it loads. */}
+      {hasCardMedia ? (
+        <div className="relative w-full aspect-16/9 overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+          {!cardMediaReady && (
+            <div className="absolute inset-0 animate-pulse bg-zinc-200 dark:bg-zinc-700/60" aria-hidden="true" />
+          )}
+          {cardImageSrc && (
+            <img
+              src={cardImageSrc}
+              alt={item.title}
+              onLoad={handleFeedImageLoad}
+              onError={handleFeedImageError}
+              className={`w-full h-full object-cover group-hover:scale-105 transition-[transform,opacity] duration-300 ${cardMediaReady ? 'opacity-100' : 'opacity-0'}`}
+              referrerPolicy="no-referrer"
+              decoding="async"
+              loading="lazy"
+            />
+          )}
 
           {isYoutube ? (
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors">

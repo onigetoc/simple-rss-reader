@@ -63,7 +63,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
   - [Tailwind CSS v4](https://tailwindcss.com/)
   - [Lucide React](https://lucide.dev/) (icons)
 - **Backend & RSS proxy**:
-  - [Express](https://expressjs.com/) (Node.js)
+  - [Fastify](https://fastify.dev/) (Node.js)
   - [rss-parser](https://github.com/rbren/rss-parser) v3.13 (RSS / Atom / RDF XML parsing with media tag extraction)
   - Client-side CORS fallback mechanism (`allorigins`) when the network restricts requests.
 
@@ -72,7 +72,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 ## 🚀 Quick start
 
 ### Requirements
-- [Node.js](https://nodejs.org/) (version 18 or higher recommended)
+- [Node.js](https://nodejs.org/) (version 20 or higher recommended)
 - `npm` or `bun`
 
 ### Installation
@@ -100,7 +100,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 
 | Command | Description |
 | :--- | :--- |
-| `npm run dev` | Starts the Express backend server with the Vite middleware in development mode (on port 3008) |
+| `npm run dev` | Starts the Fastify backend server with the Vite middleware in development mode (on port 3008) |
 | `npm run build` | Builds the frontend with Vite and bundles the TypeScript backend with esbuild into `dist/server.cjs` |
 | `npm start` | Runs the compiled production server |
 | `npm run lint` | Validates the TypeScript types (`tsc --noEmit`) |

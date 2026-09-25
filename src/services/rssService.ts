@@ -86,7 +86,7 @@ export async function fetchFeed(url: string, signal?: AbortSignal): Promise<Feed
     throw new Error("Please enter a valid RSS feed URL.");
   }
 
-  // 1. Primary: Try our backend Express API
+  // 1. Primary: Try our backend Fastify API
   try {
     const res = await fetch(`/api/rss?url=${encodeURIComponent(trimmed)}`, { signal });
     if (res.ok) {

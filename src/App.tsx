@@ -947,8 +947,10 @@ export default function App() {
 
       {/* MAIN CONTENT AREA */}
       <main className="relative flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-zinc-50 dark:bg-zinc-950">
-        {/* If an article is selected, show ArticleReaderView */}
-        {selectedArticle ? (
+        {/* Article reader overlays the list. The list stays mounted underneath
+            (hidden) so its images stay decoded and going back is instant with
+            zero re-layout: no remount, no image re-probing, scroll preserved. */}
+        {selectedArticle && (
           <ErrorBoundary
             fallbackTitle="Unable to display this article"
             onReset={handleBackToList}
@@ -977,9 +979,9 @@ export default function App() {
               onFontSizeChange={handleFontSizeChange}
             />
           </ErrorBoundary>
-        ) : (
-          /* OTHERWISE: FEED LIST VIEW */
-          <>
+        )}
+        <div className={selectedArticle ? 'hidden' : 'contents'}>
+          {/* FEED LIST VIEW (kept mounted, hidden while reading) */}
             {/* Top Navigation Bar */}
             <header
               id="main-header"
@@ -1508,8 +1510,7 @@ export default function App() {
                 )}
               </div>
             </div>
-          </>
-        )}
+        </div>
 
         {/* Floating toast: bulk refresh in progress (manual or background). */}
         {isRefreshingAll && refreshProgress && (
