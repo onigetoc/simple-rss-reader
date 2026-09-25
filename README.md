@@ -117,6 +117,11 @@ http://localhost:3008/?rss=https://nytimes.com
 ```
 The reader fetches and displays the feed automatically. This works with any feed URL (RSS, Atom or RDF), for example `https://news.ycombinator.com/rss`.
 
+Append `?view=all` to reopen directly on the aggregated **ALL Feeds** view (the underlying feed is resolved from history/cache):
+```text
+http://localhost:3008/?view=all
+```
+
 ### Via the Chrome "RSS Subscription Extension"
 The reader integrates seamlessly with the [RSS Subscription Extension](https://chromewebstore.google.com/detail/rss-subscription-extensio/nlbjncdgjeocebhnmkbbbdekmmmcbfjd) (or any similar RSS reader / subscription tool) thanks to its `?rss=` parameter.
 

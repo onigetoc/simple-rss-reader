@@ -113,6 +113,11 @@ export default function App() {
   // ALL Feeds: filter the aggregated list down to a single feed + bulk refresh state
   const [allFeedsFilter, setAllFeedsFilter] = useState<string>('all');
   const [isRefreshingAll, setIsRefreshingAll] = useState<boolean>(false);
+  // Progress of a bulk refresh (manual "Refresh all" or silent post-TTL
+  // revalidation on page load): shown in the floating toast.
+  const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
 
   // Reader font size: persisted in memory and localStorage across sessions
   const [fontSize, setFontSize] = useState<ArticleFontSize>(() => getStoredFontSize());
@@ -201,10 +206,12 @@ export default function App() {
       setSelectedArticleId(null);
 
       // Update browser URL query parameter: ?rss=...
+      // Loading a single feed always leaves the ALL Feeds view (?view=all).
       if (updateBrowserUrl && typeof window !== 'undefined') {
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('rss', effectiveUrl);
         newUrl.searchParams.delete('article');
+        newUrl.searchParams.delete('view');
         window.history.pushState({ rss: effectiveUrl, articleId: null }, '', newUrl.toString());
       }
 
@@ -303,6 +310,39 @@ export default function App() {
     [loadFeed]
   );
 
+  // Switch tabs and keep the browser URL in sync so a reload preserves the
+  // view: entering ALL Feeds bookmarks a clean ?view=all (?rss= is dropped —
+  // the underlying feed is resolved from history/cache on reload), leaving
+  // it drops ?view=all again.
+  // replaceState is used so tab switches don't pollute the Back history.
+  const handleTabChange = useCallback(
+    (tab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets') => {
+      setActiveTab(tab);
+      if (tab === 'all-feeds') setAllFeedsFilter('all');
+      setSelectedArticleId(null);
+      if (typeof window === 'undefined') return;
+      const newUrl = new URL(window.location.href);
+      if (tab === 'all-feeds') {
+        // ALL Feeds gets a clean bookmarkable URL: the underlying single
+        // feed is resolved from history/cache on reload, so ?rss= is dropped.
+        newUrl.searchParams.delete('rss');
+        newUrl.searchParams.delete('RSS');
+        newUrl.searchParams.delete('url');
+        newUrl.searchParams.delete('feed');
+        newUrl.searchParams.delete('article');
+        newUrl.searchParams.set('view', 'all');
+      } else {
+        newUrl.searchParams.delete('view');
+      }
+      window.history.replaceState(
+        { rss: newUrl.searchParams.get('rss'), articleId: null },
+        '',
+        newUrl.toString()
+      );
+    },
+    []
+  );
+
   // Add a feed from the URL input. A feed already held in memory is never added
   // again: instead we surface a notice and open the existing copy.
   const handleSubmitNewFeed = useCallback(
@@ -376,18 +416,37 @@ export default function App() {
   // Re-fetch every feed currently held in memory from its source and refresh the cache.
   const handleRefreshAllFeeds = useCallback(async () => {
     const urls = Object.keys(cachedFeedsRef.current);
-    if (urls.length === 0) return;
+    if (urls.length === 0 || isRefreshingAll) return;
 
     setIsRefreshingAll(true);
+    setRefreshProgress({ done: 0, total: urls.length });
     try {
-      const results = await Promise.allSettled(
-        urls.map(async (url) => ({ url, res: await fetchFeed(url) }))
+      const counted = urls.map((url) =>
+        fetchFeed(url).then(
+          (res) => {
+            setRefreshProgress((prev) =>
+              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
+            );
+            return { url, res };
+          },
+          (err) => {
+            setRefreshProgress((prev) =>
+              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
+            );
+            throw err;
+          }
+        )
       );
+      const results = await Promise.allSettled(counted);
 
+      let updated = 0;
+      let failed = 0;
       for (const result of results) {
         if (result.status === 'fulfilled') {
           saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
+          updated += 1;
         } else {
+          failed += 1;
           console.warn('Refresh all feeds: one feed failed', result.reason);
         }
       }
@@ -401,15 +460,26 @@ export default function App() {
         setMetadata(activeEntry.metadata);
         setItems(activeEntry.items);
       }
+
+      setNotice({
+        id: Date.now(),
+        text:
+          failed === 0
+            ? `All feeds refreshed: ${updated} feed(s) updated.`
+            : `Refresh finished: ${updated} updated, ${failed} failed.`,
+      });
     } finally {
       setIsRefreshingAll(false);
+      setRefreshProgress(null);
     }
-  }, [activeUrl]);
+  }, [activeUrl, isRefreshingAll]);
 
   // Background revalidation used on a full page load: refresh every in-memory
   // feed whose cache has expired, while leaving feeds that are still fresh
   // untouched (no forced reload of everything). `excludeUrl` is the feed the
   // page is opening — loadFeed already handles it, so we skip it here.
+  // It shares `isRefreshingAll` / `refreshProgress` with the manual refresh so
+  // the Refresh button spins and the toast shows what is happening.
   const revalidateStaleFeeds = useCallback(async (excludeUrl?: string) => {
     const cache = cachedFeedsRef.current;
     const staleUrls = Object.keys(cache).filter(
@@ -417,21 +487,51 @@ export default function App() {
     );
     if (staleUrls.length === 0) return;
 
-    const results = await Promise.allSettled(
-      staleUrls.map(async (url) => ({ url, res: await fetchFeed(url) }))
-    );
+    setIsRefreshingAll(true);
+    setRefreshProgress({ done: 0, total: staleUrls.length });
+    try {
+      const counted = staleUrls.map((url) =>
+        fetchFeed(url).then(
+          (res) => {
+            setRefreshProgress((prev) =>
+              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
+            );
+            return { url, res };
+          },
+          (err) => {
+            setRefreshProgress((prev) =>
+              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
+            );
+            throw err;
+          }
+        )
+      );
+      const results = await Promise.allSettled(counted);
 
-    let updated = false;
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
-        updated = true;
-      } else {
-        console.warn('Background revalidation: one feed failed', result.reason);
+      let updated = 0;
+      let failed = 0;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
+          updated += 1;
+        } else {
+          failed += 1;
+          console.warn('Background revalidation: one feed failed', result.reason);
+        }
       }
-    }
 
-    if (updated) setCachedFeeds({ ...getCachedFeeds() });
+      if (updated > 0) setCachedFeeds({ ...getCachedFeeds() });
+      setNotice({
+        id: Date.now(),
+        text:
+          failed === 0
+            ? `Background refresh complete: ${updated} feed(s) updated.`
+            : `Background refresh finished: ${updated} updated, ${failed} failed.`,
+      });
+    } finally {
+      setIsRefreshingAll(false);
+      setRefreshProgress(null);
+    }
   }, []);
 
   // Remove a single feed from the in-memory/localStorage cache (and its history entry)
@@ -574,7 +674,7 @@ export default function App() {
     }
   }, [currentArticleIndex, displayedItems, handleSelectArticle]);
 
-  // Inspect URL parameters on mount (?rss=... or ?url=... & ?article=...)
+  // Inspect URL parameters on mount (?rss=... or ?url=... & ?article=... & ?view=all)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -586,6 +686,7 @@ export default function App() {
       searchParams.get('feed');
 
     const articleParam = searchParams.get('article');
+    const viewParam = searchParams.get('view');
 
     let initialUrl = '';
 
@@ -599,11 +700,35 @@ export default function App() {
       });
       initialUrl = url;
     } else {
-      // Default initial feed: Hacker News or Wired
-      const defaultUrl = PRESET_FEEDS[0].url; // The Verge
-      setInputUrl(defaultUrl);
-      loadFeed(defaultUrl, false);
-      initialUrl = defaultUrl;
+      // No URL parameter: reopen the last visited feed still present in
+      // cache (history first, then the most recently updated entry), so a
+      // reload resumes where the user left off. Fresh install (empty cache)
+      // falls back to the default sample feed. The browser URL is rewritten
+      // with ?rss= so the opened feed stays shareable — except on ?view=all,
+      // where the URL is left untouched to preserve the ALL Feeds tab.
+      const cacheNow = getCachedFeeds();
+      const history = getFeedHistory();
+      let restoreUrl: string | null = null;
+      for (const h of history) {
+        const key = findCachedFeedKey(h.url, cacheNow);
+        if (key) {
+          restoreUrl = key;
+          break;
+        }
+      }
+      if (!restoreUrl) {
+        const entries = Object.values(cacheNow);
+        if (entries.length > 0) {
+          entries.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          restoreUrl = entries[0].url;
+        }
+      }
+      const targetUrl = restoreUrl || PRESET_FEEDS[0].url; // The Verge
+      setInputUrl(targetUrl);
+      // When reloading on ?view=all, keep the URL untouched so the ALL Feeds
+      // tab survives the refresh; otherwise rewrite it with ?rss=.
+      loadFeed(targetUrl, viewParam !== 'all');
+      initialUrl = targetUrl;
     }
 
     // Full page load: revalidate the other in-memory feeds whose cache expired.
@@ -613,17 +738,29 @@ export default function App() {
       revalidateStaleFeeds(initialUrl);
     }
 
+    // ?view=all bookmarks the ALL Feeds tab: restore it after a reload.
+    if (viewParam === 'all') {
+      setActiveTab('all-feeds');
+      setAllFeedsFilter('all');
+    }
+
     // Listen to browser forward/back buttons
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       const urlFromPop = params.get('rss') || params.get('url') || params.get('feed');
       const articleFromPop = params.get('article');
+      const viewFromPop = params.get('view');
 
       if (urlFromPop && urlFromPop !== activeUrl) {
         loadFeed(urlFromPop, false);
       }
 
       setSelectedArticleId(articleFromPop || null);
+      // Keep the tab in sync with ?view=all without yanking the user out of
+      // tabs that have no URL representation (favorites/history/presets).
+      setActiveTab((prev) =>
+        viewFromPop === 'all' ? 'all-feeds' : prev === 'all-feeds' ? 'feed' : prev
+      );
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -664,11 +801,7 @@ export default function App() {
         onSelectFeed={handleSelectFeed}
         onRemoveHistory={handleRemoveHistory}
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          if (tab === 'all-feeds') setAllFeedsFilter('all');
-          setSelectedArticleId(null);
-        }}
+        setActiveTab={handleTabChange}
         theme={theme}
         onToggleTheme={toggleTheme}
         onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
@@ -704,11 +837,7 @@ export default function App() {
             onSelectFeed={handleSelectFeed}
             onRemoveHistory={handleRemoveHistory}
             activeTab={activeTab}
-            setActiveTab={(tab) => {
-              setActiveTab(tab);
-              if (tab === 'all-feeds') setAllFeedsFilter('all');
-              setSelectedArticleId(null);
-            }}
+            setActiveTab={handleTabChange}
             theme={theme}
             onToggleTheme={toggleTheme}
             onRefresh={() => loadFeed(activeUrl || inputUrl, false, true)}
@@ -866,9 +995,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       // Entering ALL Feeds always starts from the full list.
-                      setAllFeedsFilter('all');
-                      setActiveTab((prev) => (prev === 'all-feeds' ? 'feed' : 'all-feeds'));
-                      setSelectedArticleId(null);
+                      handleTabChange(activeTab === 'all-feeds' ? 'feed' : 'all-feeds');
                     }}
                     title="ALL Feeds"
                     aria-label="ALL Feeds"
@@ -1190,7 +1317,11 @@ export default function App() {
                         onClick={handleRefreshAllFeeds}
                         disabled={isRefreshingAll}
                         className="inline-flex items-center justify-center p-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:opacity-60 disabled:cursor-not-allowed text-zinc-950 transition-colors cursor-pointer"
-                        title="Refresh all feeds from source"
+                        title={
+                          isRefreshingAll && refreshProgress
+                            ? `Refreshing feeds… ${refreshProgress.done}/${refreshProgress.total}`
+                            : 'Refresh all feeds from source'
+                        }
                         aria-label="Refresh all feeds from source"
                       >
                         <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAll ? 'animate-spin' : ''}`} />
@@ -1291,6 +1422,23 @@ export default function App() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Floating toast: bulk refresh in progress (manual or background). */}
+        {isRefreshingAll && refreshProgress && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="absolute bottom-4 right-4 sm:right-6 z-30 flex items-center gap-2.5 pl-3 pr-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 shadow-xl border border-zinc-700 dark:border-zinc-300 text-xs font-medium"
+          >
+            <RefreshCw className="w-4 h-4 animate-spin text-amber-500 dark:text-amber-600 flex-shrink-0" />
+            <span>
+              Refreshing feeds…{' '}
+              <strong>
+                {refreshProgress.done}/{refreshProgress.total}
+              </strong>
+            </span>
+          </div>
         )}
       </main>
 

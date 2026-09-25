@@ -532,6 +532,15 @@ export function saveFeedToCache(
   metadata: FeedMetadata,
   items: FeedItem[]
 ): Record<string, CachedFeedEntry> {
+  const persist = (candidate: Record<string, CachedFeedEntry>): boolean => {
+    try {
+      localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(candidate));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   try {
     const cache = getCachedFeeds();
     cache[url] = {
@@ -549,6 +558,7 @@ export function saveFeedToCache(
     };
 
     // Cap cache at 30 feeds to stay performant
+    let working: Record<string, CachedFeedEntry> = cache;
     const keys = Object.keys(cache);
     if (keys.length > 30) {
       const sortedKeys = keys.sort((a, b) => cache[b].updatedAt - cache[a].updatedAt);
@@ -556,15 +566,39 @@ export function saveFeedToCache(
       for (const k of sortedKeys.slice(0, 30)) {
         pruned[k] = cache[k];
       }
-      localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(pruned));
-      return pruned;
+      working = pruned;
     }
 
-    localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(cache));
-    return cache;
+    if (persist(working)) return working;
+
+    // Persist failed (usually localStorage quota): evict the oldest feeds until
+    // the new entry fits, instead of dropping everything. The new feed always
+    // has the freshest timestamp so it survives the eviction.
+    const byNewest = Object.entries(working).sort(
+      (a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0)
+    );
+    while (byNewest.length > 1) {
+      byNewest.pop();
+      const candidate: Record<string, CachedFeedEntry> = Object.fromEntries(byNewest);
+      if (persist(candidate)) {
+        console.warn(
+          `Feed cache storage full: evicted oldest feed(s) to make room for ${url}.`
+        );
+        return candidate;
+      }
+    }
+
+    console.warn(
+      'Failed to save feed cache: storage full, showing the feed for this session only.'
+    );
+    return working;
   } catch (err) {
     console.warn('Failed to save feed cache:', err);
-    return {};
+    try {
+      return getCachedFeeds();
+    } catch {
+      return {};
+    }
   }
 }
 
@@ -575,7 +609,11 @@ export function removeFeedFromCache(url: string): Record<string, CachedFeedEntry
     localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(cache));
     return cache;
   } catch {
-    return {};
+    try {
+      return getCachedFeeds();
+    } catch {
+      return {};
+    }
   }
 }
 
