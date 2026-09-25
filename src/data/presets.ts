@@ -85,4 +85,25 @@ export const PRESET_FEEDS: PresetFeed[] = [
     url: 'https://www.reddit.com/search.rss?q=ai+openai&sort=hot',
     description: 'Hottest Reddit posts matching "ai openai".',
   },
+  {
+    id: 'medium-tag-ai',
+    title: 'Medium - AI',
+    category: 'Blog & AI',
+    url: 'https://medium.com/feed/tag/ai',
+    description: 'Latest Medium stories tagged "ai". Swap the tag for any topic.',
+  },
+  {
+    id: 'medium-tag-openai',
+    title: 'Medium - OpenAI',
+    category: 'Blog & AI',
+    url: 'https://medium.com/feed/tag/openai',
+    description: 'Latest Medium stories tagged "openai".',
+  },
+  {
+    id: 'medium-tag-chatgpt',
+    title: 'Medium - ChatGPT',
+    category: 'Blog & AI',
+    url: 'https://medium.com/feed/tag/chatgpt',
+    description: 'Latest Medium stories tagged "chatgpt".',
+  },
 ];

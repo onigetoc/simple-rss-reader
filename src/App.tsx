@@ -44,12 +44,14 @@ import {
   isAbortError,
   findCachedFeedKey,
   getGoogleFaviconUrl,
+  getStoredCacheTtlMs,
+  setStoredCacheTtlMs,
 } from './services/rssService';
 import { Sidebar } from './components/Sidebar';
 import { FeedItemCard } from './components/FeedItemCard';
 import { FeedFavicon } from './components/FeedFavicon';
 import { ArticleReaderView } from './components/ArticleReaderView';
-import { ChromeExtensionHelpModal } from './components/ChromeExtensionHelpModal';
+import { SettingsModal } from './components/SettingsModal';
 import { FeedFilterCombobox } from './components/FeedFilterCombobox';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -92,6 +94,10 @@ export default function App() {
   const loadRequestRef = useRef<number>(0);
   // Controller for the in-flight feed fetch so the user can stop a slow load.
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Guards the one-shot revalidation of expired feeds on a full page load:
+  // StrictMode double-invokes mount effects in dev, which would otherwise fire
+  // every background revalidation twice.
+  const hasRevalidatedStaleRef = useRef<boolean>(false);
   useEffect(() => {
     cachedFeedsRef.current = cachedFeeds;
   }, [cachedFeeds]);
@@ -116,6 +122,15 @@ export default function App() {
     setStoredFontSize(newSize);
   }, []);
 
+  // Feed cache duration (Settings): how long a cached feed stays fresh before a
+  // background revalidation is attempted. Persisted in localStorage.
+  const [cacheTtlMs, setCacheTtlMs] = useState<number>(() => getStoredCacheTtlMs());
+
+  const handleCacheTtlChange = useCallback((ttlMs: number) => {
+    setCacheTtlMs(ttlMs);
+    setStoredCacheTtlMs(ttlMs);
+  }, []);
+
   // Pagination state: show 20 at a time by default
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
 
@@ -128,7 +143,7 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   // Modals & UI helpers
-  const [isChromeHelpOpen, setIsChromeHelpOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
 
   // Transient info shown when the user tries to add a feed already in memory.
@@ -157,8 +172,10 @@ export default function App() {
   };
 
   // Function to load a feed by URL.
-  // Serves a fresh cached copy instantly (30 min TTL) unless forceReload is true,
-  // in which case it always fetches from the source and refreshes the cache.
+  // Serves a fresh cached copy instantly (TTL configurable in Settings, 30 min
+  // by default) unless forceReload is true, in which case it always fetches from
+  // the source and refreshes the cache. Past the TTL the cached articles stay on
+  // screen while the feed is revalidated in the background.
   const loadFeed = useCallback(
     async (urlToLoad: string, updateBrowserUrl = true, forceReload = false, updateInput = true) => {
       if (!urlToLoad || !urlToLoad.trim()) return;
@@ -205,7 +222,7 @@ export default function App() {
           document.title = `${cachedEntry.metadata.title} - RSS Viewer`;
         }
 
-        // Still fresh: nothing else to do.
+        // Still fresh: serve the cache, no network request.
         if (isCacheEntryFresh(cachedEntry)) {
           setIsLoading(false);
           return;
@@ -389,6 +406,34 @@ export default function App() {
     }
   }, [activeUrl]);
 
+  // Background revalidation used on a full page load: refresh every in-memory
+  // feed whose cache has expired, while leaving feeds that are still fresh
+  // untouched (no forced reload of everything). `excludeUrl` is the feed the
+  // page is opening — loadFeed already handles it, so we skip it here.
+  const revalidateStaleFeeds = useCallback(async (excludeUrl?: string) => {
+    const cache = cachedFeedsRef.current;
+    const staleUrls = Object.keys(cache).filter(
+      (url) => url !== excludeUrl && !isCacheEntryFresh(cache[url])
+    );
+    if (staleUrls.length === 0) return;
+
+    const results = await Promise.allSettled(
+      staleUrls.map(async (url) => ({ url, res: await fetchFeed(url) }))
+    );
+
+    let updated = false;
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
+        updated = true;
+      } else {
+        console.warn('Background revalidation: one feed failed', result.reason);
+      }
+    }
+
+    if (updated) setCachedFeeds({ ...getCachedFeeds() });
+  }, []);
+
   // Remove a single feed from the in-memory/localStorage cache (and its history entry)
   const handleRemoveFeedFromCache = useCallback(
     (url: string) => {
@@ -542,18 +587,30 @@ export default function App() {
 
     const articleParam = searchParams.get('article');
 
+    let initialUrl = '';
+
     if (rssParam && rssParam.trim()) {
-      setInputUrl(rssParam.trim());
-      loadFeed(rssParam.trim(), false).then(() => {
+      const url = rssParam.trim();
+      setInputUrl(url);
+      loadFeed(url, false).then(() => {
         if (articleParam) {
           setSelectedArticleId(articleParam);
         }
       });
+      initialUrl = url;
     } else {
       // Default initial feed: Hacker News or Wired
       const defaultUrl = PRESET_FEEDS[0].url; // The Verge
       setInputUrl(defaultUrl);
       loadFeed(defaultUrl, false);
+      initialUrl = defaultUrl;
+    }
+
+    // Full page load: revalidate the other in-memory feeds whose cache expired.
+    // Run once per page load (StrictMode double-invokes this effect in dev).
+    if (!hasRevalidatedStaleRef.current) {
+      hasRevalidatedStaleRef.current = true;
+      revalidateStaleFeeds(initialUrl);
     }
 
     // Listen to browser forward/back buttons
@@ -571,7 +628,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [loadFeed]);
+  }, [loadFeed, revalidateStaleFeeds]);
 
   // Handle Favorites toggle. Stable identity matters: FeedItemCard is memoized
   // and receives this handler, so a new function per render would defeat it.
@@ -621,7 +678,7 @@ export default function App() {
           setSearchTerm(val);
           if (selectedArticleId) setSelectedArticleId(null);
         }}
-        onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         cachedFeeds={cachedFeeds}
         onClearCache={handleClearCache}
         onRemoveFeed={handleRemoveFeedFromCache}
@@ -661,7 +718,7 @@ export default function App() {
               setSearchTerm(val);
               if (selectedArticleId) setSelectedArticleId(null);
             }}
-            onOpenChromeHelp={() => setIsChromeHelpOpen(true)}
+            onOpenSettings={() => setIsSettingsOpen(true)}
             cachedFeeds={cachedFeeds}
             onClearCache={handleClearCache}
             onRemoveFeed={handleRemoveFeedFromCache}
@@ -1237,11 +1294,13 @@ export default function App() {
         )}
       </main>
 
-      {/* Chrome Extension Help Modal */}
-      <ChromeExtensionHelpModal
-        isOpen={isChromeHelpOpen}
-        onClose={() => setIsChromeHelpOpen(false)}
+      {/* Settings / Browser Integration Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
         currentFeedUrl={activeUrl || inputUrl}
+        cacheTtlMs={cacheTtlMs}
+        onCacheTtlChange={handleCacheTtlChange}
       />
     </div>
   );

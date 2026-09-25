@@ -12,7 +12,7 @@ import {
   Globe,
   Sun,
   Moon,
-  Info,
+  Settings,
   X,
   Layers,
   Newspaper,
@@ -41,7 +41,7 @@ interface SidebarProps {
   onStop: () => void;
   searchTerm: string;
   onSearchChange: (term: string) => void;
-  onOpenChromeHelp: () => void;
+  onOpenSettings: () => void;
   cachedFeeds?: Record<string, CachedFeedEntry>;
   onClearCache?: () => void;
   onRemoveFeed?: (url: string) => void;
@@ -68,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onStop,
   searchTerm,
   onSearchChange,
-  onOpenChromeHelp,
+  onOpenSettings,
   cachedFeeds = {},
   onClearCache,
   onRemoveFeed,
@@ -664,11 +664,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <span>RSS Parser v3.13</span>
         <button
           type="button"
-          onClick={onOpenChromeHelp}
+          onClick={onOpenSettings}
           className="hover:text-amber-500 dark:hover:text-amber-400 flex items-center gap-1 transition-colors cursor-pointer"
+          title="Settings"
         >
-          <Info className="w-3.5 h-3.5" />
-          Extension setup
+          <Settings className="w-3.5 h-3.5" />
+          Settings
         </button>
       </div>
 

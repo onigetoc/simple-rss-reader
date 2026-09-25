@@ -6,6 +6,7 @@ const STORAGE_HISTORY_KEY = 'rss_viewer_history_v1';
 const STORAGE_THEME_KEY = 'rss_viewer_theme_v1';
 const STORAGE_FONT_SIZE_KEY = 'rss_viewer_font_size_v1';
 const STORAGE_FEEDS_CACHE_KEY = 'rss_viewer_feeds_cache_v2';
+const STORAGE_CACHE_TTL_KEY = 'rss_viewer_cache_ttl_v1';
 
 export type ArticleFontSize = 'normal' | 'large';
 
@@ -414,7 +415,43 @@ export function findCachedFeedKey(
 }
 
 /** How long a cached feed is considered fresh before a network refresh is attempted. */
-export const FEEDS_CACHE_TTL_MS = 30 * 60 * 1000;
+export const DEFAULT_CACHE_TTL_MS = 30 * 60 * 1000;
+
+/** Cache durations offered in Settings. The stored value is the `ms` field. */
+export const CACHE_TTL_OPTIONS: ReadonlyArray<{ label: string; ms: number }> = [
+  { label: '5 minutes', ms: 5 * 60 * 1000 },
+  { label: '15 minutes', ms: 15 * 60 * 1000 },
+  { label: '30 minutes (default)', ms: 30 * 60 * 1000 },
+  { label: '1 hour', ms: 60 * 60 * 1000 },
+  { label: '3 hours', ms: 3 * 60 * 60 * 1000 },
+  { label: '12 hours', ms: 12 * 60 * 60 * 1000 },
+  { label: '24 hours', ms: 24 * 60 * 60 * 1000 },
+];
+
+/**
+ * Cache duration configured by the user (Settings tab), in milliseconds.
+ * Falls back to {@link DEFAULT_CACHE_TTL_MS} when unset or invalid.
+ */
+export function getStoredCacheTtlMs(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_CACHE_TTL_KEY);
+    const parsed = raw ? Number(raw) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return DEFAULT_CACHE_TTL_MS;
+  } catch {
+    return DEFAULT_CACHE_TTL_MS;
+  }
+}
+
+export function setStoredCacheTtlMs(ms: number): void {
+  try {
+    if (Number.isFinite(ms) && ms > 0) {
+      localStorage.setItem(STORAGE_CACHE_TTL_KEY, String(ms));
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export function getCachedFeeds(): Record<string, CachedFeedEntry> {
   try {
@@ -484,7 +521,7 @@ export function getCachedFeedEntry(url: string): CachedFeedEntry | null {
  */
 export function isCacheEntryFresh(
   entry: CachedFeedEntry | null | undefined,
-  ttlMs: number = FEEDS_CACHE_TTL_MS
+  ttlMs: number = getStoredCacheTtlMs()
 ): boolean {
   if (!entry || !entry.updatedAt) return false;
   return Date.now() - entry.updatedAt < ttlMs;

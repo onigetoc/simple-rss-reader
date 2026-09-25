@@ -1,6 +1,6 @@
 # RSS Viewer 📰
 
-A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images, YouTube videos and audio podcasts), an immersive reader mode, in-memory multi-feed aggregation and a smart 30-minute local cache for instant navigation.
+A modern, fast and clean RSS and Atom feed reader, built for comfortable reading with direct URL parameter support, media extraction (images, YouTube videos and audio podcasts), an immersive reader mode, in-memory multi-feed aggregation and a smart, configurable local cache for instant navigation.
 
 ![RSS Viewer preview](https://raw.githubusercontent.com/onigetoc/simple-rss-reader/refs/heads/main/public/screenshot.png)
 
@@ -11,7 +11,7 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 ### 🔗 Direct URL gateway & Chrome extensions
 - **`?rss=` parameter**: Load any feed directly by opening `/?rss=https://example.com/feed.xml`.
 - **Extension / Bookmarklet integration**: Works with browser extensions (Chrome, Firefox) and one-click bookmarklets to send the current page's feed straight into the reader.
-- **Help dialog**: The **?** icon in the sidebar header opens a dialog with the current feed's Chrome extension URL, the bookmarklet and the extension snippets.
+- **Settings dialog**: The **Settings** button in the sidebar footer opens a tabbed dialog — **Settings** (cache duration) and **Extension** (the current feed's Chrome extension URL, the bookmarklet and the extension snippets).
 - **Compact URL bar**: The URL field, the icon-only **Load** button and the **Refresh** button share a single row.
 
 ### 📚 Aggregated "ALL Feeds" view
@@ -24,10 +24,11 @@ A modern, fast and clean RSS and Atom feed reader, built for comfortable reading
 
 > 💡 **Tip — search across everything:** When **ALL Feeds** is showing every in-memory feed, the search bar queries the **entire combined list at once** — every article from every loaded feed, merged and deduplicated. This makes it great for precise research: even very specific or unexpected keywords can surface matching articles across all your sources. Keep in mind this cross-feed search only covers feeds currently in memory, so load (or **Refresh all**) the feeds you want to search through first.
 
-### ⚡ Smart 30-minute cache
+### ⚡ Smart configurable cache
 - **Per-feed cache**: Every feed you load (metadata + articles) is stored in `localStorage`, keyed by its URL, so it survives page reloads.
-- **30-minute freshness window**: Re-opening a feed within 30 minutes is instant — no network request and no loading flash.
-- **Stale-while-revalidate**: Past 30 minutes, the cached articles are still displayed immediately while the feed refreshes silently in the background. If the refresh fails, the cached copy is kept.
+- **Configurable freshness window (Settings tab)**: Choose how long a feed stays fresh — from 5 minutes to 24 hours, **30 minutes by default**. Re-opening a feed from inside the app within that window is instant — no network request and no loading flash.
+- **Stale-while-revalidate**: Once a feed is older than the window, the cached articles are displayed immediately while the feed refreshes silently in the background. If the refresh fails, the cached copy is kept.
+- **Page reload revalidates expired feeds**: A full page load paints the cached articles instantly, then refreshes **every in-memory feed whose cache has expired** — fresh feeds are left untouched, so a refresh never re-fetches everything. A fresh cache entry is written when new content arrives.
 - **Manual refresh from source**: The refresh button (and the error **Retry** button) bypasses the cache and re-fetches the live feed, then updates the cache.
 - **Automatic pruning**: The cache is capped at 30 feeds; the oldest entries are removed automatically.
 
@@ -216,6 +217,18 @@ https://www.youtube.com/feeds/videos.xml?playlist_id=PLxxxxxxxxxxxxxxxx
 ### 📰 Preloaded tech feeds
 
 The **ALL Feeds** view ships with a one-click sample pack (The Verge, Ars Technica, Hacker News, GitHub Blog) so you can start exploring right away.
+
+### ✍️ Medium tags
+
+Medium exposes every tag as an RSS feed — just swap the tag to follow anything:
+
+```text
+https://medium.com/feed/tag/ai
+https://medium.com/feed/tag/openai
+https://medium.com/feed/tag/chatgpt
+```
+
+Replace `ai` with any tag (`openai`, `chatgpt`, `programming`, …) to build a custom topic feed.
 
 ---
 
