@@ -1,4 +1,12 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef, startTransition } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useLayoutEffect,
+  startTransition,
+} from 'react';
 import {
   Rss,
   RefreshCw,
@@ -42,6 +50,7 @@ import {
   isCacheEntryFresh,
   clearFeedsCache,
   getAllCachedItemsSorted,
+  dedupeItemsByLink,
   isAbortError,
   findCachedFeedKey,
   getGoogleFaviconUrl,
@@ -125,6 +134,24 @@ function normalizeText(text?: any): string {
   }
 }
 
+type SidebarTab = 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets';
+
+// Identity of the article list currently on screen. Two lists share a key only
+// when they show the same selection (tab + feed/filter + search + media filter).
+// Changing the key means the user opened a different list, which should start at
+// the top — except when the browser Back/Forward buttons ask us to restore a
+// remembered offset.
+function listViewKey(
+  tab: SidebarTab,
+  activeUrl: string,
+  allFeedsFilter: string,
+  searchTerm: string,
+  mediaFilter: string
+): string {
+  const scope = tab === 'all-feeds' ? allFeedsFilter : tab === 'feed' ? activeUrl : tab;
+  return `${tab}|${scope}|${searchTerm}|${mediaFilter}`;
+}
+
 export default function App() {
   // Theme state: dark by default
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getStoredTheme());
@@ -205,6 +232,93 @@ export default function App() {
   // Sidebar navigation tab
   const [activeTab, setActiveTab] = useState<'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets'>('feed');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
+
+  // --- Article-list scroll memory ----------------------------------------
+  // The list scrolls inside its own container, not the window. Each distinct
+  // list keeps its offset so the browser Back/Forward buttons can restore where
+  // the user was — like a normal web page — while opening a new feed or tab
+  // starts at the top.
+  const currentListViewKey = listViewKey(
+    activeTab,
+    activeUrl,
+    allFeedsFilter,
+    searchTerm,
+    mediaFilter
+  );
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollPositionsRef = useRef<Record<string, number>>({});
+  const listViewKeyRef = useRef(currentListViewKey);
+  // Offset (and the list it belongs to) to apply on the next list change after a
+  // Back/Forward navigation.
+  const pendingScrollRestoreRef = useRef<{ key: string; top: number } | null>(null);
+  // Offset to return to after closing an article opened from the list.
+  const articleReturnScrollRef = useRef<number | null>(null);
+  // Latest list identity, read by the popstate listener (registered once, so it
+  // cannot rely on the render-scoped values).
+  const viewStateRef = useRef({
+    tab: activeTab,
+    activeUrl,
+    allFeedsFilter,
+    searchTerm,
+    mediaFilter,
+    articleId: selectedArticleId,
+    key: currentListViewKey,
+  });
+  useEffect(() => {
+    viewStateRef.current = {
+      tab: activeTab,
+      activeUrl,
+      allFeedsFilter,
+      searchTerm,
+      mediaFilter,
+      articleId: selectedArticleId,
+      key: currentListViewKey,
+    };
+  }, [
+    activeTab,
+    activeUrl,
+    allFeedsFilter,
+    searchTerm,
+    mediaFilter,
+    selectedArticleId,
+    currentListViewKey,
+  ]);
+
+  // Remember each list's offset while the user scrolls.
+  const handleListScroll = useCallback(() => {
+    const el = listScrollRef.current;
+    if (el) scrollPositionsRef.current[listViewKeyRef.current] = el.scrollTop;
+  }, []);
+
+  // Restore the list offset when an article opened from it is closed. Usually a
+  // no-op (the list stays mounted while reading); it matters only if the browser
+  // drops the offset while the container was hidden with display:none.
+  useLayoutEffect(() => {
+    if (selectedArticleId) return;
+    const el = listScrollRef.current;
+    if (!el) return;
+    const remembered =
+      articleReturnScrollRef.current ?? scrollPositionsRef.current[currentListViewKey] ?? null;
+    if (remembered !== null) {
+      el.scrollTop = remembered;
+    }
+    articleReturnScrollRef.current = null;
+  }, [selectedArticleId]);
+
+  // A different list (feed, tab, filter…) starts at the top — unless the browser
+  // Back/Forward buttons asked us to restore a remembered offset.
+  useLayoutEffect(() => {
+    listViewKeyRef.current = currentListViewKey;
+    const el = listScrollRef.current;
+    if (!el) return;
+    const pending = pendingScrollRestoreRef.current;
+    pendingScrollRestoreRef.current = null;
+    if (pending && pending.key === currentListViewKey) {
+      el.scrollTop = pending.top;
+    } else {
+      el.scrollTop = 0;
+    }
+  }, [currentListViewKey]);
 
   // Modals & UI helpers
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -683,7 +797,10 @@ export default function App() {
       list = list.filter((item) => Boolean(item.imageUrl || item.videoUrl || item.audioUrl));
     }
 
-    return list;
+    // Collapse duplicate articles sharing the same link (the same story can come
+    // from both a publisher feed and an aggregator with a different item id), so
+    // one article never shows up twice in a list.
+    return dedupeItemsByLink(list);
   }, [activeTab, favorites, allCachedItems, items, searchTerm, mediaFilter, allFeedsFilter]);
 
   // 20-at-a-time paginated list of items for the grid/cards view
@@ -714,6 +831,12 @@ export default function App() {
   // Open article in detail view
   const handleSelectArticle = useCallback(
     (item: FeedItem) => {
+      // Remember where the list was so closing the article returns there. Only
+      // capture once: Next/Prev call this again while the list is hidden, where
+      // the container reports no offset.
+      if (articleReturnScrollRef.current === null) {
+        articleReturnScrollRef.current = listScrollRef.current?.scrollTop ?? null;
+      }
       setSelectedArticleId(item.id);
       if (typeof window !== 'undefined') {
         const newUrl = new URL(window.location.href);
@@ -838,8 +961,34 @@ export default function App() {
       const articleFromPop = params.get('article');
       const viewFromPop = params.get('view');
 
-      if (urlFromPop && urlFromPop !== activeUrl) {
+      // Like a web page, returning to a list restores the offset the user left
+      // it at. Compute the destination list before the state updates, then let
+      // the list-change layout effect apply the remembered offset.
+      const vs = viewStateRef.current;
+      const targetTab: SidebarTab =
+        viewFromPop === 'all' ? 'all-feeds' : vs.tab === 'all-feeds' ? 'feed' : vs.tab;
+      const targetKey = listViewKey(
+        targetTab,
+        urlFromPop || vs.activeUrl,
+        'all',
+        vs.searchTerm,
+        vs.mediaFilter
+      );
+      if (targetKey !== vs.key) {
+        pendingScrollRestoreRef.current = {
+          key: targetKey,
+          top: scrollPositionsRef.current[targetKey] ?? 0,
+        };
+      }
+
+      if (urlFromPop && urlFromPop !== vs.activeUrl) {
         loadFeed(urlFromPop, false);
+      }
+
+      // Opening an article from the list (Forward, or a shared ?article= URL):
+      // remember the current offset before the reader hides the list.
+      if (articleFromPop && !vs.articleId && articleReturnScrollRef.current === null) {
+        articleReturnScrollRef.current = listScrollRef.current?.scrollTop ?? null;
       }
 
       setSelectedArticleId(articleFromPop || null);
@@ -1224,7 +1373,11 @@ export default function App() {
             )}
 
             {/* Stream / Articles View */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+            <div
+              ref={listScrollRef}
+              onScroll={handleListScroll}
+              className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8"
+            >
               <div className="max-w-6xl mx-auto space-y-6">
                 {/* Search Active Notification Bar */}
                 {searchTerm && (
@@ -1431,7 +1584,7 @@ export default function App() {
                     >
                       {paginatedItems.map((item) => (
                         <FeedItemCard
-                          key={item.id}
+                          key={`${item.feedUrl || ''}|${item.id}`}
                           item={item}
                           isFavorite={isItemFavorite(item, favorites)}
                           onToggleFavorite={handleToggleFavorite}
@@ -1496,7 +1649,7 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setVisibleCount(PAGE_SIZE);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                listScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                               }}
                               className="px-3.5 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-medium text-xs transition-colors cursor-pointer"
                             >

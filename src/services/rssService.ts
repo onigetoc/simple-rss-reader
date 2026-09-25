@@ -554,18 +554,23 @@ export function saveFeedToCache(
 
   try {
     const cache = getCachedFeeds();
-    cache[url] = {
-      url,
+    // Reuse an equivalent existing key so the same feed can never be stored
+    // twice under different URL spellings — duplicate entries made the same
+    // article show up repeatedly in ALL Feeds and survive removal.
+    const existingKey = findCachedFeedKey(url, cache);
+    const cacheKey = existingKey || url;
+    cache[cacheKey] = {
+      url: cacheKey,
       metadata,
-      items: items.map((it) => ({
+      items: dedupeItemsByLink(items).map((it) => ({
         ...it,
         feedTitle: it.feedTitle || metadata.title,
         // Always group items under their cache key so lookups (favicon, per-feed
         // filter) stay consistent even when the server normalized the URL.
-        feedUrl: url,
+        feedUrl: cacheKey,
       })),
       updatedAt: Date.now(),
-      faviconUrl: getGoogleFaviconUrl(metadata?.link || url),
+      faviconUrl: getGoogleFaviconUrl(metadata?.link || cacheKey),
     };
 
     // Cap cache at 30 feeds to stay performant
@@ -604,7 +609,14 @@ export function saveFeedToCache(
 export function removeFeedFromCache(url: string): Record<string, CachedFeedEntry> {
   try {
     const cache = getCachedFeeds();
-    delete cache[url];
+    // Remove every equivalent spelling, not just the exact key, so a feed can
+    // never linger through a duplicate entry created before keys were reused.
+    const target = normalizeFeedUrl(url);
+    for (const key of Object.keys(cache)) {
+      if (key === url || (target && normalizeFeedUrl(key) === target)) {
+        delete cache[key];
+      }
+    }
     localStorage.setItem(STORAGE_FEEDS_CACHE_KEY, JSON.stringify(cache));
     return cache;
   } catch {
@@ -677,27 +689,71 @@ export function getGoogleFaviconUrl(siteUrl?: string | null): string | null {
 }
 
 /**
+ * Canonical key for an article link: lower-cased host without `www.`, no
+ * fragment, no trailing slash, tracking params removed and remaining params
+ * sorted. Two URLs pointing at the same article — e.g. the publisher's own feed
+ * and a Google News feed whose link was rewritten by `decodeGoogleNewsLinks` —
+ * collapse to the same key, while their different `id`s cannot hide the match.
+ */
+function canonicalLinkKey(link?: string): string {
+  const raw = (link || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const path = parsed.pathname.replace(/\/+$/, '');
+    const params = Array.from(parsed.searchParams.entries())
+      .filter(([key]) => !/^(utm_|fbclid$|gclid$|mc_|_hs|ref$|ref_)/i.test(key))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => (value ? `${key}=${value}` : key))
+      .join('&');
+    return `${host}${path}${params ? `?${params}` : ''}`;
+  } catch {
+    // Not a parseable URL: fall back to a trimmed, case-insensitive comparison.
+    return raw.replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+/**
+ * Removes duplicate articles that share the same canonical link, even when
+ * their `id` differs — the same story can arrive from a publisher feed and from
+ * an aggregator (Google News, etc.) with its own id scheme. When two copies
+ * exist, the one carrying an image is preferred; order is otherwise preserved.
+ */
+export function dedupeItemsByLink(items: FeedItem[]): FeedItem[] {
+  const indexByKey = new Map<string, number>();
+  const out: FeedItem[] = [];
+  for (const item of items) {
+    const key = canonicalLinkKey(item.link) || item.id || item.link;
+    const existing = indexByKey.get(key);
+    if (existing === undefined) {
+      indexByKey.set(key, out.length);
+      out.push(item);
+    } else if (!out[existing].imageUrl && item.imageUrl) {
+      out[existing] = item;
+    }
+  }
+  return out;
+}
+
+/**
  * Returns all articles from all cached feeds in memory,
  * deduplicated and sorted by date in descending order (newest first).
  */
 export function getAllCachedItemsSorted(cache: Record<string, CachedFeedEntry>): FeedItem[] {
-  const seenIds = new Set<string>();
-  const merged: FeedItem[] = [];
+  const enriched: FeedItem[] = [];
 
-  const feeds = Object.values(cache);
-  for (const feed of feeds) {
+  for (const feed of Object.values(cache)) {
     for (const item of feed.items) {
-      const uniqueKey = item.id || item.link;
-      if (!seenIds.has(uniqueKey)) {
-        seenIds.add(uniqueKey);
-        merged.push({
-          ...item,
-          feedTitle: item.feedTitle || feed.metadata?.title || 'RSS Feed',
-          feedUrl: item.feedUrl || feed.url,
-        });
-      }
+      enriched.push({
+        ...item,
+        feedTitle: item.feedTitle || feed.metadata?.title || 'RSS Feed',
+        feedUrl: item.feedUrl || feed.url,
+      });
     }
   }
+
+  const merged = dedupeItemsByLink(enriched);
 
   // Parse dates robustly
   const parseTime = (dateStr?: string): number => {
