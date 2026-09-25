@@ -450,31 +450,122 @@ const FEED_ACCEPT =
 // every refresh, which is what previously tripped the IP rate limit (error 1015).
 const curlUaHosts = new Set<string>();
 
+// DOM fetch Response — `Response` alone would resolve to Express's type
+// because of the express import above.
+type FetchResponse = Awaited<ReturnType<typeof fetch>>;
+
+// YouTube / Google feeds often answer 429 (rate limit) or time out, then work
+// again hours later. Retry transient failures instead of failing at once.
+const FETCH_MAX_ATTEMPTS = 3;
+const FETCH_BASE_DELAY_MS = 1000;
+const FETCH_TIMEOUT_MS = 20000;
+const FETCH_MAX_RETRY_AFTER_MS = 15000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Transient network failures worth retrying (reset connections, DNS, timeouts). */
+function isRetryableNetworkError(err: any): boolean {
+  const code =
+    typeof err?.code === 'string'
+      ? err.code
+      : typeof err?.cause?.code === 'string'
+      ? err.cause.code
+      : '';
+  return (
+    err?.name === 'TimeoutError' ||
+    err?.name === 'AbortError' ||
+    [
+      'ECONNRESET',
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      'EAI_AGAIN',
+      'EPIPE',
+      'UND_ERR_CONNECT_TIMEOUT',
+      'UND_ERR_HEADERS_TIMEOUT',
+      'UND_ERR_BODY_TIMEOUT',
+    ].includes(code)
+  );
+}
+
+/** Honor the server's Retry-After hint (seconds or HTTP date), capped. */
+function getRetryAfterMs(response: FetchResponse): number {
+  const raw = response.headers.get('retry-after');
+  if (raw) {
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, FETCH_MAX_RETRY_AFTER_MS);
+    }
+    const dateMs = Date.parse(raw);
+    if (!Number.isNaN(dateMs)) {
+      return Math.max(0, Math.min(dateMs - Date.now(), FETCH_MAX_RETRY_AFTER_MS));
+    }
+  }
+  return 0;
+}
+
 async function fetchFeedText(url: string): Promise<string> {
   const host = new URL(url).host;
   const preferCurlUa = curlUaHosts.has(host);
 
-  const request = (ua: string) =>
+  const request = (ua: string, signal: AbortSignal) =>
     fetch(url, {
       headers: { 'User-Agent': ua, Accept: FEED_ACCEPT },
       redirect: 'follow',
+      signal,
     });
 
-  let response = await request(preferCurlUa ? CURL_UA : BROWSER_UA);
-  if (response.status === 403 && !preferCurlUa) {
-    // Cloudflare-protected feed: retry once presenting as curl, and remember the
-    // host so later fetches skip the browser UA entirely.
-    response = await request(CURL_UA);
-    if (response.ok) curlUaHosts.add(host);
+  const httpError = (status: number, statusText: string) =>
+    new Error(`Failed to fetch feed (HTTP status: ${status} ${statusText})`);
+
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let response: FetchResponse;
+    try {
+      response = await request(preferCurlUa ? CURL_UA : BROWSER_UA, controller.signal);
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      if (attempt < FETCH_MAX_ATTEMPTS && isRetryableNetworkError(err)) {
+        await sleep(FETCH_BASE_DELAY_MS * attempt);
+        continue;
+      }
+      throw err;
+    }
+    clearTimeout(timer);
+
+    if (response.status === 403 && !preferCurlUa) {
+      // Cloudflare-protected feed: retry once presenting as curl, and remember the
+      // host so later fetches skip the browser UA entirely.
+      const curlController = new AbortController();
+      const curlTimer = setTimeout(() => curlController.abort(), FETCH_TIMEOUT_MS);
+      try {
+        response = await request(CURL_UA, curlController.signal);
+      } finally {
+        clearTimeout(curlTimer);
+      }
+      if (response.ok) curlUaHosts.add(host);
+    }
+
+    if (response.ok) return response.text();
+
+    // Rate-limited or upstream hiccup: back off (honoring Retry-After) and retry.
+    if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+      lastError = httpError(response.status, response.statusText);
+      if (attempt < FETCH_MAX_ATTEMPTS) {
+        await sleep(getRetryAfterMs(response) || FETCH_BASE_DELAY_MS * attempt);
+        continue;
+      }
+    }
+
+    throw httpError(response.status, response.statusText);
   }
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch feed (HTTP status: ${response.status} ${response.statusText})`
-    );
-  }
-
-  return response.text();
+  throw lastError ?? new Error('Failed to fetch feed.');
 }
 
 async function startServer() {

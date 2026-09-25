@@ -527,6 +527,17 @@ export function isCacheEntryFresh(
   return Date.now() - entry.updatedAt < ttlMs;
 }
 
+// Set when the latest saveFeedToCache() could not persist (localStorage
+// quota). The UI consumes it to warn the user instead of silently losing data.
+let lastCachePersistFailed = false;
+
+/** True once if the latest cache save failed to persist; resets on read. */
+export function consumeCachePersistFailed(): boolean {
+  const failed = lastCachePersistFailed;
+  lastCachePersistFailed = false;
+  return failed;
+}
+
 export function saveFeedToCache(
   url: string,
   metadata: FeedMetadata,
@@ -571,25 +582,13 @@ export function saveFeedToCache(
 
     if (persist(working)) return working;
 
-    // Persist failed (usually localStorage quota): evict the oldest feeds until
-    // the new entry fits, instead of dropping everything. The new feed always
-    // has the freshest timestamp so it survives the eviction.
-    const byNewest = Object.entries(working).sort(
-      (a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0)
-    );
-    while (byNewest.length > 1) {
-      byNewest.pop();
-      const candidate: Record<string, CachedFeedEntry> = Object.fromEntries(byNewest);
-      if (persist(candidate)) {
-        console.warn(
-          `Feed cache storage full: evicted oldest feed(s) to make room for ${url}.`
-        );
-        return candidate;
-      }
-    }
-
+    // Persist failed (usually localStorage quota). Never delete existing
+    // feeds to make room: a failed refresh must not wipe the cache — keep
+    // everything for this session and let the UI warn the user instead. The
+    // newest changes simply won't survive a reload until space is freed.
+    lastCachePersistFailed = true;
     console.warn(
-      'Failed to save feed cache: storage full, showing the feed for this session only.'
+      'Feed cache storage full: keeping all feeds for this session only. Delete unused feeds to free space.'
     );
     return working;
   } catch (err) {

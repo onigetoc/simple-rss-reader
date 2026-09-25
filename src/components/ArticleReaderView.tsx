@@ -322,7 +322,7 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           type="button"
           onClick={onPrev}
           className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-zinc-900/90 text-white shadow-xl hover:bg-amber-500 hover:text-zinc-950 transition-all flex items-center justify-center border border-zinc-700 group focus:outline-hidden"
-          title={`Previous article: ${getSafeDisplayString(prevTitle)} (←)`}
+          aria-label={`Previous article: ${getSafeDisplayString(prevTitle)} (←)`}
         >
           <ChevronLeft className="w-6 h-6 transform group-hover:-translate-x-0.5 transition-transform" />
           {prevTitle && (
@@ -338,7 +338,7 @@ export const ArticleReaderView: React.FC<ArticleReaderViewProps> = ({
           type="button"
           onClick={onNext}
           className="absolute right-4 sm:right-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 rounded-full bg-zinc-900/90 text-white shadow-xl hover:bg-amber-500 hover:text-zinc-950 transition-all flex items-center justify-center border border-zinc-700 group focus:outline-hidden"
-          title={`Next article: ${getSafeDisplayString(nextTitle)} (→)`}
+          aria-label={`Next article: ${getSafeDisplayString(nextTitle)} (→)`}
         >
           <ChevronRight className="w-6 h-6 transform group-hover:translate-x-0.5 transition-transform" />
           {nextTitle && (

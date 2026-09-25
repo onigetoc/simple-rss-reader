@@ -37,6 +37,7 @@ import {
   CachedFeedEntry,
   getCachedFeeds,
   saveFeedToCache,
+  consumeCachePersistFailed,
   removeFeedFromCache,
   isCacheEntryFresh,
   clearFeedsCache,
@@ -57,6 +58,58 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Number of articles to display at a time
 const PAGE_SIZE = 20;
+
+// Bulk refreshes (Refresh all / background revalidation) fan out over many
+// hosts at once; a full parallel burst is exactly what trips YouTube/Google
+// rate limits (HTTP 429), so concurrency is capped.
+const BULK_REFRESH_CONCURRENCY = 4;
+
+// Reddit allows ~1 RSS request/min per client. Bulk refreshes space out
+// reddit.com feeds so they don't 429; other feeds load first so the UI
+// updates fast and Reddit trickles in afterwards, never blocking display.
+const REDDIT_MIN_GAP_MS = 65_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRedditFeedUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname.toLowerCase().endsWith('reddit.com');
+  } catch {
+    return false;
+  }
+}
+
+type BulkRefreshOutcome =
+  | { ok: true; url: string; res: FeedResponse }
+  | { ok: false; url: string; err: unknown };
+
+async function refreshUrlsBatched(
+  urls: string[],
+  onOneDone: () => void
+): Promise<BulkRefreshOutcome[]> {
+  const outcomes: BulkRefreshOutcome[] = new Array(urls.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(BULK_REFRESH_CONCURRENCY, urls.length) },
+    async () => {
+      while (next < urls.length) {
+        const index = next++;
+        const url = urls[index];
+        try {
+          outcomes[index] = { ok: true, url, res: await fetchFeed(url) };
+        } catch (err) {
+          outcomes[index] = { ok: false, url, err };
+        } finally {
+          onOneDone();
+        }
+      }
+    }
+  );
+  await Promise.all(workers);
+  return outcomes;
+}
 
 // Helper to remove accents and lower case for bulletproof searching
 function normalizeText(text?: any): string {
@@ -98,6 +151,9 @@ export default function App() {
   // StrictMode double-invokes mount effects in dev, which would otherwise fire
   // every background revalidation twice.
   const hasRevalidatedStaleRef = useRef<boolean>(false);
+  // Timestamp of the last reddit.com request: Reddit rate-limits RSS to about
+  // 1 request/min, so bulk refreshes space them out (see runBulkRefresh).
+  const lastRedditRequestAt = useRef<number>(0);
   useEffect(() => {
     cachedFeedsRef.current = cachedFeeds;
   }, [cachedFeeds]);
@@ -114,10 +170,13 @@ export default function App() {
   const [allFeedsFilter, setAllFeedsFilter] = useState<string>('all');
   const [isRefreshingAll, setIsRefreshingAll] = useState<boolean>(false);
   // Progress of a bulk refresh (manual "Refresh all" or silent post-TTL
-  // revalidation on page load): shown in the floating toast.
-  const [refreshProgress, setRefreshProgress] = useState<{ done: number; total: number } | null>(
-    null
-  );
+  // revalidation on page load): shown in the floating toast. `note` replaces
+  // the label during slow phases (e.g. waiting on Reddit's rate limit).
+  const [refreshProgress, setRefreshProgress] = useState<{
+    done: number;
+    total: number;
+    note?: string;
+  } | null>(null);
 
   // Reader font size: persisted in memory and localStorage across sessions
   const [fontSize, setFontSize] = useState<ArticleFontSize>(() => getStoredFontSize());
@@ -243,6 +302,9 @@ export default function App() {
       abortControllerRef.current = controller;
 
       try {
+        // Stamp Reddit requests so a bulk refresh started right after a
+        // manual load still respects the ~1 req/min spacing.
+        if (isRedditFeedUrl(effectiveUrl)) lastRedditRequestAt.current = Date.now();
         const result: FeedResponse = await fetchFeed(effectiveUrl, controller.signal);
 
         // Ignore responses from an outdated navigation.
@@ -255,6 +317,12 @@ export default function App() {
         // so an equivalent URL can never create a duplicate entry).
         const updatedCache = saveFeedToCache(effectiveUrl, result.metadata, result.items);
         setCachedFeeds({ ...updatedCache });
+        if (consumeCachePersistFailed()) {
+          setNotice({
+            id: Date.now(),
+            text: 'Local storage is full: all feeds are kept for this session, but newest changes may not survive a reload. Delete unused feeds to free space.',
+          });
+        }
 
         // Save to history
         if (result.metadata?.title) {
@@ -301,10 +369,13 @@ export default function App() {
   // Load a specific feed (URL input, loaded feeds, history, samples) and always
   // return to the single "Feed" view so the freshly loaded feed is displayed,
   // even if the user was browsing ALL Feeds, Favorites, History, etc.
+  // Selections coming from the panel (updateInput = false) clear the URL
+  // input instead of prefilling it — the header already shows where we are.
   const handleSelectFeed = useCallback(
     (url: string, updateInput = true) => {
       setActiveTab('feed');
       setSelectedArticleId(null);
+      if (!updateInput) setInputUrl('');
       loadFeed(url, true, false, updateInput);
     },
     [loadFeed]
@@ -313,12 +384,18 @@ export default function App() {
   // Switch tabs and keep the browser URL in sync so a reload preserves the
   // view: entering ALL Feeds bookmarks a clean ?view=all (?rss= is dropped —
   // the underlying feed is resolved from history/cache on reload), leaving
-  // it drops ?view=all again.
+  // it drops ?view=all again. The URL input follows the same logic: cleared
+  // when entering ALL Feeds, and never auto-refilled on tab switches — a
+  // panel selection clears it too (see handleSelectFeed), so the field is
+  // always free for pasting a new feed. The header already shows where we are.
   // replaceState is used so tab switches don't pollute the Back history.
   const handleTabChange = useCallback(
     (tab: 'feed' | 'all-feeds' | 'favorites' | 'history' | 'presets') => {
       setActiveTab(tab);
-      if (tab === 'all-feeds') setAllFeedsFilter('all');
+      if (tab === 'all-feeds') {
+        setAllFeedsFilter('all');
+        setInputUrl('');
+      }
       setSelectedArticleId(null);
       if (typeof window === 'undefined') return;
       const newUrl = new URL(window.location.href);
@@ -413,43 +490,80 @@ export default function App() {
     setCachedFeeds({});
   }, []);
 
+  // Short, readable names of failed feeds for the refresh summary notice.
+  const formatFailedFeedNames = useCallback((failedUrls: string[]): string => {
+    const names = failedUrls.map(
+      (u) => cachedFeedsRef.current[u]?.metadata?.title || u
+    );
+    const short = names.map((n) => (n.length > 40 ? `${n.slice(0, 37)}…` : n));
+    const shown = short.slice(0, 2).join(', ');
+    return short.length > 2 ? `${shown} (+${short.length - 2} more)` : shown;
+  }, []);
+
+  // Shared core of Refresh-all and background revalidation: fast feeds first
+  // (UI updates without waiting), then reddit.com feeds trickle in with the
+  // ~1 req/min spacing Reddit enforces. The display is refreshed after each
+  // stage so nothing ever blocks on Reddit.
+  const runBulkRefresh = useCallback(
+    async (urls: string[]): Promise<{ updated: number; failedUrls: string[] }> => {
+      const redditUrls = urls.filter(isRedditFeedUrl);
+      const otherUrls = urls.filter((u) => !isRedditFeedUrl(u));
+      setRefreshProgress({ done: 0, total: urls.length });
+      const bump = () =>
+        setRefreshProgress((prev) =>
+          prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
+        );
+
+      let updated = 0;
+      const failedUrls: string[] = [];
+      const apply = (outcome: BulkRefreshOutcome) => {
+        if (outcome.ok) {
+          saveFeedToCache(outcome.url, outcome.res.metadata, outcome.res.items);
+          updated += 1;
+        } else {
+          failedUrls.push(outcome.url);
+          console.warn('Bulk refresh: one feed failed', outcome.err);
+        }
+      };
+
+      // 1. Fast batch: every non-Reddit feed, up to 4 in parallel.
+      (await refreshUrlsBatched(otherUrls, bump)).forEach(apply);
+      if (updated > 0) setCachedFeeds({ ...getCachedFeeds() });
+
+      // 2. Reddit trickle: spaced out, cache updated as each one lands.
+      if (redditUrls.length > 0) {
+        setRefreshProgress((prev) =>
+          prev ? { ...prev, note: 'Waiting on Reddit rate-limit…' } : prev
+        );
+        for (const url of redditUrls) {
+          const elapsed = Date.now() - lastRedditRequestAt.current;
+          if (elapsed < REDDIT_MIN_GAP_MS) await delay(REDDIT_MIN_GAP_MS - elapsed);
+          lastRedditRequestAt.current = Date.now();
+          let outcome: BulkRefreshOutcome;
+          try {
+            outcome = { ok: true, url, res: await fetchFeed(url) };
+          } catch (err) {
+            outcome = { ok: false, url, err };
+          }
+          apply(outcome);
+          bump();
+          if (outcome.ok) setCachedFeeds({ ...getCachedFeeds() });
+        }
+      }
+
+      return { updated, failedUrls };
+    },
+    []
+  );
+
   // Re-fetch every feed currently held in memory from its source and refresh the cache.
   const handleRefreshAllFeeds = useCallback(async () => {
     const urls = Object.keys(cachedFeedsRef.current);
     if (urls.length === 0 || isRefreshingAll) return;
 
     setIsRefreshingAll(true);
-    setRefreshProgress({ done: 0, total: urls.length });
     try {
-      const counted = urls.map((url) =>
-        fetchFeed(url).then(
-          (res) => {
-            setRefreshProgress((prev) =>
-              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
-            );
-            return { url, res };
-          },
-          (err) => {
-            setRefreshProgress((prev) =>
-              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
-            );
-            throw err;
-          }
-        )
-      );
-      const results = await Promise.allSettled(counted);
-
-      let updated = 0;
-      let failed = 0;
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
-          updated += 1;
-        } else {
-          failed += 1;
-          console.warn('Refresh all feeds: one feed failed', result.reason);
-        }
-      }
+      const { updated, failedUrls } = await runBulkRefresh(urls);
 
       const refreshed = getCachedFeeds();
       setCachedFeeds(refreshed);
@@ -463,16 +577,17 @@ export default function App() {
 
       setNotice({
         id: Date.now(),
-        text:
-          failed === 0
-            ? `All feeds refreshed: ${updated} feed(s) updated.`
-            : `Refresh finished: ${updated} updated, ${failed} failed.`,
+        text: consumeCachePersistFailed()
+          ? `Refresh finished: ${updated} updated, ${failedUrls.length} failed. Local storage is full — delete unused feeds to persist changes.`
+          : failedUrls.length === 0
+          ? `All feeds refreshed: ${updated} feed(s) updated.`
+          : `Refresh finished: ${updated} updated, ${failedUrls.length} failed (${formatFailedFeedNames(failedUrls)}).`,
       });
     } finally {
       setIsRefreshingAll(false);
       setRefreshProgress(null);
     }
-  }, [activeUrl, isRefreshingAll]);
+  }, [activeUrl, isRefreshingAll, formatFailedFeedNames, runBulkRefresh]);
 
   // Background revalidation used on a full page load: refresh every in-memory
   // feed whose cache has expired, while leaving feeds that are still fresh
@@ -488,51 +603,23 @@ export default function App() {
     if (staleUrls.length === 0) return;
 
     setIsRefreshingAll(true);
-    setRefreshProgress({ done: 0, total: staleUrls.length });
     try {
-      const counted = staleUrls.map((url) =>
-        fetchFeed(url).then(
-          (res) => {
-            setRefreshProgress((prev) =>
-              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
-            );
-            return { url, res };
-          },
-          (err) => {
-            setRefreshProgress((prev) =>
-              prev ? { ...prev, done: Math.min(prev.done + 1, prev.total) } : prev
-            );
-            throw err;
-          }
-        )
-      );
-      const results = await Promise.allSettled(counted);
-
-      let updated = 0;
-      let failed = 0;
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          saveFeedToCache(result.value.url, result.value.res.metadata, result.value.res.items);
-          updated += 1;
-        } else {
-          failed += 1;
-          console.warn('Background revalidation: one feed failed', result.reason);
-        }
-      }
+      const { updated, failedUrls } = await runBulkRefresh(staleUrls);
 
       if (updated > 0) setCachedFeeds({ ...getCachedFeeds() });
       setNotice({
         id: Date.now(),
-        text:
-          failed === 0
-            ? `Background refresh complete: ${updated} feed(s) updated.`
-            : `Background refresh finished: ${updated} updated, ${failed} failed.`,
+        text: consumeCachePersistFailed()
+          ? `Background refresh finished: ${updated} updated, ${failedUrls.length} failed. Local storage is full — delete unused feeds to persist changes.`
+          : failedUrls.length === 0
+          ? `Background refresh complete: ${updated} feed(s) updated.`
+          : `Background refresh finished: ${updated} updated, ${failedUrls.length} failed (${formatFailedFeedNames(failedUrls)}).`,
       });
     } finally {
       setIsRefreshingAll(false);
       setRefreshProgress(null);
     }
-  }, []);
+  }, [formatFailedFeedNames, runBulkRefresh]);
 
   // Remove a single feed from the in-memory/localStorage cache (and its history entry)
   const handleRemoveFeedFromCache = useCallback(
@@ -1433,7 +1520,7 @@ export default function App() {
           >
             <RefreshCw className="w-4 h-4 animate-spin text-amber-500 dark:text-amber-600 flex-shrink-0" />
             <span>
-              Refreshing feeds…{' '}
+              {refreshProgress.note ?? 'Refreshing feeds…'}{' '}
               <strong>
                 {refreshProgress.done}/{refreshProgress.total}
               </strong>

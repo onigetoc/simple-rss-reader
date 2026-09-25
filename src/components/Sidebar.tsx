@@ -588,7 +588,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={preset.id}
                   type="button"
                   onClick={() => {
-                    onSelectFeed(preset.url);
+                    // Picking a sample never fills the URL input: the header
+                    // already shows where we are.
+                    onSelectFeed(preset.url, false);
                     if (onCloseMobile) onCloseMobile();
                   }}
                   className={`w-full p-2.5 rounded-lg text-left transition-all border cursor-pointer ${
@@ -633,7 +635,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        onSelectFeed(h.url);
+                        // Same as samples: reopen without touching the input.
+                        onSelectFeed(h.url, false);
                         if (onCloseMobile) onCloseMobile();
                       }}
                       className="min-w-0 flex-1 text-left cursor-pointer"
